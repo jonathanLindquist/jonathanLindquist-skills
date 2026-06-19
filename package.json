@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "lint": "node --check scripts/install.mjs && node --check setup-project-workflow/scripts/setup_project_workflow.mjs && node --check setup-project-workflow/scripts/new_project_ticket.mjs && node --check setup-project-workflow/scripts/update_project_ticket.mjs && node --check test/install.test.mjs && node --check test/setup-project-workflow.test.mjs"
+    "lint": "node --check scripts/install.mjs && node --check setup-project-workflow/scripts/setup_project_workflow.mjs && node --check setup-project-workflow/scripts/new_project_ticket.mjs && node --check setup-project-workflow/scripts/update_project_ticket.mjs && node --check test/install.test.mjs && node --check test/setup-project-workflow.test.mjs && node --check test/skill-frontmatter.test.mjs"
   },
   "dependencies": {
     "skill-organizer": "https://codeload.github.com/jonathanLindquist/skill-organizer/tar.gz/416a7b793be929e6ed071f9abeb019b5fe0f9e47"

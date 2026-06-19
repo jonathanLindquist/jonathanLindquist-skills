@@ -1,6 +1,15 @@
 ---
 name: setup-project-workflow
-description: Set up a repo with the user's standard project workflow: canonical AGENTS.md, thin CLAUDE.md pointer, repo-local docs/agents guidance, stable execution plans under docs/plans, ticket IDs backed by docs/agents/ticket-sequence.json, Obsidian Kanban issue tracking from PROJECT_WORKFLOW_OBSIDIAN_VAULT, public-safe .env.example/.env setup, and configured Kanban tag colors. Use when the user asks to initialize a new project/repo, set up project workflow, apply this project workflow pattern, create the Obsidian issue tracker for a repo, or make a new repo ready for the engineering skills.
+description: >-
+  Set up a repo with the user's standard project workflow: canonical AGENTS.md,
+  thin CLAUDE.md pointer, repo-local docs/agents guidance, stable execution
+  plans under docs/plans, ticket IDs backed by
+  docs/agents/ticket-sequence.json, Obsidian Kanban issue tracking from
+  PROJECT_WORKFLOW_OBSIDIAN_VAULT, public-safe .env.example/.env setup, and
+  configured Kanban tag colors. Use when the user asks to initialize a new
+  project/repo, set up project workflow, apply this project workflow pattern,
+  create the Obsidian issue tracker for a repo, or make a new repo ready for
+  the engineering skills.
 disable-model-invocation: true
 ---
 
