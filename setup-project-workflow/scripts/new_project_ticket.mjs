@@ -394,8 +394,7 @@ function insertCardAtBottomOfLane(boardMarkdown, lane, card) {
 
   let insertIndex = lines.length;
   for (let index = laneIndex + 1; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
-    if (trimmed.startsWith("## ") || trimmed.startsWith("%% kanban:settings")) {
+    if (/^##\s+/.test(lines[index]) || lines[index].startsWith("%% kanban:settings")) {
       insertIndex = index;
       break;
     }

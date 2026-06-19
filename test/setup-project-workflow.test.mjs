@@ -13,6 +13,18 @@ const setupScript = path.join(
   "scripts",
   "setup_project_workflow.mjs",
 );
+const newTicketScript = path.join(
+  repoRoot,
+  "setup-project-workflow",
+  "scripts",
+  "new_project_ticket.mjs",
+);
+const updateTicketScript = path.join(
+  repoRoot,
+  "setup-project-workflow",
+  "scripts",
+  "update_project_ticket.mjs",
+);
 
 test("setup copies the bundled Kanban template into the target project", async (t) => {
   const workspace = await tempWorkspace(t);
@@ -64,6 +76,101 @@ test("setup copies the bundled Kanban template into the target project", async (
   assert.match(board, /TMP-0001 Initialize Project Workflow/);
   assert.match(board, /"tag-colors"/);
 });
+
+test("completed ticket insertion preserves existing completed card details", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Implement comparison ticket",
+    "--description",
+    "Verify card movement keeps each card block intact.",
+    "--tag",
+    "tests",
+  ]);
+  runOk(updateTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket",
+    "TMP-0002",
+    "--lane",
+    "Completed",
+    "--complete",
+    "--note",
+    "Verified completed lane structure.",
+  ]);
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected a Kanban board under the vault");
+  const board = await fs.readFile(boardPath, "utf8");
+  assert.deepEqual(boardStructureIssues(board), []);
+});
+
+function runOk(scriptPath, args) {
+  const result = spawnSync(process.execPath, [scriptPath, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  return result;
+}
+
+function boardStructureIssues(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const issues = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const cardMatch = lines[index].match(/^- \[[ xX]\].*?(TMP-\d{4})/);
+    if (!cardMatch) continue;
+
+    const id = cardMatch[1];
+    let end = lines.length;
+    for (let next = index + 1; next < lines.length; next += 1) {
+      if (
+        /^- \[[ xX]\]/.test(lines[next]) ||
+        /^##\s+/.test(lines[next]) ||
+        lines[next].startsWith("%% kanban:settings")
+      ) {
+        end = next;
+        break;
+      }
+    }
+
+    const block = lines.slice(index, end).join("\n");
+    const ticketIds = [...block.matchAll(/- Ticket:\s+(TMP-\d{4})/g)].map((match) => match[1]);
+    if (!ticketIds.includes(id)) {
+      issues.push(`${id}: missing matching Ticket line before next card/lane/settings`);
+    }
+
+    for (const ticketId of ticketIds) {
+      if (ticketId !== id) {
+        issues.push(`${id}: contains another ticket's details (${ticketId})`);
+      }
+    }
+  }
+
+  const laneHeadings = ["Backlog", "In Progress", "Completed"];
+  for (const match of markdown.matchAll(/^##\s+(.+)$/gm)) {
+    const heading = match[1].trim();
+    if (!laneHeadings.includes(heading)) {
+      issues.push(`unexpected top-level heading: ${heading}`);
+    }
+  }
+
+  return issues;
+}
 
 async function tempWorkspace(t) {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "setup-project-workflow-test-"));
