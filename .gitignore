@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+*.log
+
+# Local config and session artifacts.
+.env
+.env.*
+!.env.example
+setup-project-workflow-handoff-*.md
+
+# Scratch areas used while validating workflow behavior.
+.tmp/
+tmp/

@@ -1,0 +1,1093 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const homeDir = os.homedir();
+const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
+const defaultLanes = ["Backlog", "In Progress", "Completed"];
+const ticketWidth = 4;
+const bootstrapTicketNumber = 1;
+const bootstrapTitle = "Initialize Project Workflow";
+const bootstrapTriageTag = "ready-for-agent";
+const bootstrapTopicTags = ["obsidian", "kanban"];
+
+const triageTags = [
+  {
+    role: "needs-triage",
+    tag: "needs-triage",
+    colorName: "Amber",
+    color: "#111827",
+    backgroundColor: "#f59e0b",
+    meaning: "Maintainer needs to evaluate this issue",
+  },
+  {
+    role: "needs-info",
+    tag: "needs-info",
+    colorName: "Blue",
+    color: "#0f172a",
+    backgroundColor: "#38bdf8",
+    meaning: "Waiting on reporter for more information",
+  },
+  {
+    role: "ready-for-agent",
+    tag: "ready-for-agent",
+    colorName: "Violet",
+    color: "#ffffff",
+    backgroundColor: "#8b5cf6",
+    meaning: "Fully specified, ready for an agent",
+  },
+  {
+    role: "ready-for-human",
+    tag: "ready-for-human",
+    colorName: "Pink",
+    color: "#500724",
+    backgroundColor: "#f472b6",
+    meaning: "Requires human implementation",
+  },
+  {
+    role: "wontfix",
+    tag: "wontfix",
+    colorName: "Red",
+    color: "#ffffff",
+    backgroundColor: "#ef4444",
+    meaning: "Will not be actioned",
+  },
+];
+
+const commonTags = [
+  ["cli", "#312e81", "#a5b4fc"],
+  ["sync", "#064e3b", "#6ee7b7"],
+  ["tests", "#7c2d12", "#fdba74"],
+  ["obsidian", "#581c87", "#d8b4fe"],
+  ["kanban", "#164e63", "#67e8f9"],
+  ["triage", "#451a03", "#fbbf24"],
+];
+
+const usage = `Usage:
+  setup_project_workflow.mjs [options]
+
+Options:
+  --project-root <path>    Repo/project root to set up. Defaults to cwd.
+  --ticket-prefix <value>  Ticket prefix. Defaults to initials from the project name.
+  --dry-run                Print planned writes without changing files.
+  --force                  Overwrite generated docs and non-wrapper CLAUDE.md.
+  --help                   Show this help.
+`;
+
+function parseArgs(argv) {
+  const options = {
+    projectRoot: process.cwd(),
+    ticketPrefix: null,
+    dryRun: false,
+    force: false,
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === "--project-root") {
+      options.projectRoot = argv[++index];
+    } else if (arg === "--ticket-prefix") {
+      options.ticketPrefix = normalizeTicketPrefix(argv[++index]);
+    } else if (arg === "--dry-run") {
+      options.dryRun = true;
+    } else if (arg === "--force") {
+      options.force = true;
+    } else if (arg === "--help" || arg === "-h") {
+      console.log(usage);
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown option: ${arg}\n\n${usage}`);
+    }
+  }
+
+  options.projectRoot = path.resolve(expandHome(options.projectRoot));
+
+  return options;
+}
+
+function expandHome(value) {
+  if (value === "~") return homeDir;
+  if (value.startsWith("~/")) return path.join(homeDir, value.slice(2));
+  return value;
+}
+
+function displayPath(value) {
+  const relative = path.relative(homeDir, value);
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    return `~/${relative}`;
+  }
+  return value;
+}
+
+function projectRelativePath(projectRoot) {
+  const relative = path.relative(homeDir, projectRoot);
+
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    return relative;
+  }
+
+  return path.join("external-projects", path.basename(projectRoot));
+}
+
+function boardReference() {
+  return `derived from \`$${vaultEnvVar}\` and this repository's path relative to \`$HOME\``;
+}
+
+function parseEnv(content) {
+  const values = new Map();
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+
+    values.set(match[1], unquoteEnvValue(match[2].trim()));
+  }
+
+  return values;
+}
+
+function unquoteEnvValue(value) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function readProjectEnv(projectRoot) {
+  const envPath = path.join(projectRoot, ".env");
+  const content = readFileIfExists(envPath);
+  return content === null ? new Map() : parseEnv(content);
+}
+
+function resolveRequiredVault(projectRoot, projectEnv, options) {
+  const value = projectEnv.get(vaultEnvVar);
+
+  if (!value || !value.trim()) {
+    const exampleMessage = options.dryRun
+      ? "This dry run would create or update .env.example before stopping."
+      : "If .env.example was missing, this command created it before stopping.";
+
+    throw new Error(
+      [
+        `Missing required local config: ${vaultEnvVar}.`,
+        `Create ${path.join(projectRoot, ".env")} from .env.example and set ${vaultEnvVar} to your Obsidian vault root.`,
+        exampleMessage,
+        "Then rerun setup_project_workflow.mjs.",
+      ].join("\n"),
+    );
+  }
+
+  return path.resolve(expandHome(value.trim()));
+}
+
+function titleCase(value) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeTicketPrefix(value) {
+  return String(value ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function defaultTicketPrefix(projectName) {
+  const words = projectName
+    .split(/[^a-zA-Z0-9]+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+  const prefix =
+    words.length > 1
+      ? words.map((word) => word[0]).join("")
+      : (words[0] ?? projectName).slice(0, 3);
+
+  return normalizeTicketPrefix(prefix || "TKT");
+}
+
+function ticketId(prefix, number, width = ticketWidth) {
+  return `${prefix}-${String(number).padStart(width, "0")}`;
+}
+
+function ticketPlanFileName(id, title) {
+  return `${id}-${slugify(title)}.md`;
+}
+
+function ensureDir(dir, options, actions) {
+  if (fs.existsSync(dir)) return;
+  actions.push(`create dir ${displayPath(dir)}`);
+  if (!options.dryRun) fs.mkdirSync(dir, { recursive: true });
+}
+
+function readFileIfExists(filePath) {
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : null;
+}
+
+function writeIfChanged(filePath, content, options, actions) {
+  const current = readFileIfExists(filePath);
+  if (current === content) {
+    actions.push(`unchanged ${displayPath(filePath)}`);
+    return "unchanged";
+  }
+
+  ensureDir(path.dirname(filePath), options, actions);
+  actions.push(`${current === null ? "create" : "update"} ${displayPath(filePath)}`);
+
+  if (!options.dryRun) {
+    fs.writeFileSync(filePath, content);
+  }
+
+  return current === null ? "created" : "updated";
+}
+
+function writeGeneratedFile(filePath, content, options, actions) {
+  const current = readFileIfExists(filePath);
+
+  if (current !== null && current !== content && !options.force) {
+    actions.push(
+      `skip existing ${displayPath(filePath)}; rerun with --force after preserving project-specific edits`,
+    );
+    return "skipped";
+  }
+
+  return writeIfChanged(filePath, content, options, actions);
+}
+
+function writeStateFileIfMissing(filePath, content, options, actions) {
+  if (readFileIfExists(filePath) !== null) {
+    actions.push(`preserve existing ${displayPath(filePath)}`);
+    return "preserved";
+  }
+
+  return writeIfChanged(filePath, content, options, actions);
+}
+
+function envExample() {
+  return `# Local machine configuration for setup-project-workflow.
+# Copy this file to .env and fill in the required values before running setup.
+# Do not commit .env. It contains machine-specific paths.
+
+${envExampleSnippet()}`;
+}
+
+function envExampleSnippet() {
+  return `# setup-project-workflow: root path to the Obsidian vault that should contain this project's Kanban board.
+# Use an absolute path or a ~ path.
+${vaultEnvVar}=
+`;
+}
+
+function updateEnvExampleFile(projectRoot, options, actions) {
+  const envExamplePath = path.join(projectRoot, ".env.example");
+  const current = readFileIfExists(envExamplePath);
+
+  if (current === null) {
+    writeIfChanged(envExamplePath, envExample(), options, actions);
+    return;
+  }
+
+  if (envLinePattern(vaultEnvVar).test(current)) {
+    actions.push(`unchanged ${displayPath(envExamplePath)}`);
+    return;
+  }
+
+  const separator = current.endsWith("\n") ? "\n" : "\n\n";
+  writeIfChanged(envExamplePath, `${current}${separator}${envExampleSnippet()}`, options, actions);
+}
+
+function envLinePattern(key) {
+  return new RegExp(`^${key}=.*$`, "m");
+}
+
+function gitignoreIgnoresEnv(markdown) {
+  return markdown.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return trimmed === ".env" || trimmed === ".env*";
+  });
+}
+
+function updateGitignore(projectRoot, options, actions) {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const current = readFileIfExists(gitignorePath);
+
+  if (current !== null && gitignoreIgnoresEnv(current)) {
+    actions.push(`unchanged ${displayPath(gitignorePath)}`);
+    return;
+  }
+
+  const base = current === null ? "" : current.trimEnd();
+  const prefix = base ? `${base}\n\n` : "";
+  writeIfChanged(
+    gitignorePath,
+    `${prefix}# Local machine configuration\n.env\n`,
+    options,
+    actions,
+  );
+}
+
+function updateLocalConfigFiles(projectRoot, options, actions) {
+  updateEnvExampleFile(projectRoot, options, actions);
+  updateGitignore(projectRoot, options, actions);
+}
+
+function tagColorEntries() {
+  const tagsByName = new Map();
+  const addTag = ([tag, color, backgroundColor]) => {
+    if (tag) tagsByName.set(tag, [tag, color, backgroundColor]);
+  };
+
+  for (const tag of triageTags) {
+    addTag([tag.tag, tag.color, tag.backgroundColor]);
+  }
+
+  for (const tag of commonTags) {
+    addTag(tag);
+  }
+
+  return [...tagsByName.values()].flatMap(([tag, color, backgroundColor]) => [
+    { tagKey: `#${tag}`, color, backgroundColor },
+    { tagKey: tag, color, backgroundColor },
+  ]);
+}
+
+function mergeTagColors(existing) {
+  const byKey = new Map();
+
+  for (const color of Array.isArray(existing) ? existing : []) {
+    if (color && typeof color.tagKey === "string") {
+      byKey.set(color.tagKey, color);
+    }
+  }
+
+  for (const color of tagColorEntries()) {
+    byKey.set(color.tagKey, color);
+  }
+
+  return [...byKey.values()];
+}
+
+function applyKanbanSettings(settings) {
+  return {
+    ...settings,
+    "move-tags": true,
+    "tag-action": "kanban",
+    "tag-colors": mergeTagColors(settings["tag-colors"]),
+  };
+}
+
+function settingsBlock(settings, fenceLanguage = "") {
+  return `%% kanban:settings
+\`\`\`${fenceLanguage}
+${JSON.stringify(applyKanbanSettings(settings), null, 2)}
+\`\`\`
+%%`;
+}
+
+function extractSettings(markdown) {
+  const match = markdown.match(/%% kanban:settings\n```([^\n]*)\n([\s\S]*?)\n```\n%%/);
+  if (!match) return { settings: {}, fenceLanguage: "" };
+
+  return {
+    settings: JSON.parse(match[2]),
+    fenceLanguage: match[1],
+  };
+}
+
+function extractLanes(markdown) {
+  const lanes = [...markdown.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1].trim());
+  return lanes.length > 0 ? lanes : defaultLanes;
+}
+
+function lanesWithCompleted(lanes) {
+  return lanes.includes("Completed") ? lanes : [...lanes, "Completed"];
+}
+
+function updateMarkdownSettings(markdown) {
+  const pattern = /%% kanban:settings\n```([^\n]*)\n([\s\S]*?)\n```\n%%/;
+  const match = markdown.match(pattern);
+
+  if (!match) {
+    return `${markdown.trimEnd()}\n\n\n${settingsBlock({
+      "kanban-plugin": "board",
+      "list-collapse": [false, false, false],
+      "lane-width": 400,
+    })}\n`;
+  }
+
+  const settings = JSON.parse(match[2]);
+  return markdown.replace(pattern, settingsBlock(settings, match[1]));
+}
+
+function updatePluginSettings(vault, options, actions) {
+  const pluginSettingsPath = path.join(
+    vault,
+    ".obsidian",
+    "plugins",
+    "obsidian-kanban",
+    "data.json",
+  );
+  const current = readFileIfExists(pluginSettingsPath);
+
+  if (current === null) {
+    actions.push(
+      `skip ${displayPath(pluginSettingsPath)}; Obsidian Kanban plugin settings file does not exist`,
+    );
+    return;
+  }
+
+  const settings = applyKanbanSettings(JSON.parse(current));
+  writeIfChanged(pluginSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, options, actions);
+}
+
+function templateCard() {
+  return `- [ ] # <span style="color: #77ccd5">ABC-0001 Ticket title</span>
+    
+    ## Description
+    
+    #needs-triage #optional-topic
+    
+    1-3 sentence summary.
+    
+    ## Implementation Details
+    
+    - Ticket: ABC-0001
+    - Plan: docs/plans/ABC-0001-ticket-title.md
+    
+    ## TODO Checklist
+    Items to implement:
+    
+    - [ ] Fill in linked plan
+    
+    ## Definition of Done
+    
+    All checks are completed and the verification steps below pass:
+    
+    - [ ] Linked plan has verification notes
+    - [ ] Required checks pass`;
+}
+
+function templateMarkdown(lanes, settings) {
+  const normalizedLanes = lanesWithCompleted(lanes);
+  const sections = normalizedLanes.map((lane) => {
+    if (lane === "Backlog") return `## ${lane}\n\n${templateCard()}`;
+    return `## ${lane}\n`;
+  });
+
+  return `---
+
+kanban-plugin: board
+
+---
+
+${sections.join("\n\n")}
+
+
+${settingsBlock({
+    "kanban-plugin": "board",
+    "list-collapse": normalizedLanes.map(() => false),
+    "lane-width": 400,
+    ...settings,
+  })}
+`;
+}
+
+function updateTemplateSettings(templatePath, options, actions) {
+  const template = readFileIfExists(templatePath);
+  if (template === null) {
+    actions.push(`skip ${displayPath(templatePath)}; template does not exist`);
+    return { lanes: defaultLanes, settings: {} };
+  }
+
+  const lanes = extractLanes(template);
+  const { settings } = extractSettings(template);
+  writeIfChanged(templatePath, templateMarkdown(lanes, settings), options, actions);
+
+  return {
+    lanes,
+    settings,
+  };
+}
+
+function cardMarkdown({ checked, id, title, description, planPath, tags }) {
+  const checkChar = checked ? "x" : " ";
+  const tagLine = tags.map((tag) => `#${tag}`).join(" ");
+
+  return `- [${checkChar}] # <span style="color: #77ccd5">${id} ${title}</span>
+    
+    ## Description
+    
+    ${tagLine}
+    
+    ${description}
+    
+    ## Implementation Details
+    
+    - Ticket: ${id}
+    - Plan: ${planPath}
+    
+    ## TODO Checklist
+    Items to implement:
+    
+    - [${checked ? "x" : " "}] Read this card and the linked plan before implementation
+    - [${checked ? "x" : " "}] Fill in linked plan with scope and acceptance criteria
+    
+    ## Definition of Done
+    
+    All checks are completed and the verification steps below pass:
+    
+    - [${checked ? "x" : " "}] Acceptance criteria or Definition of Done verified
+    - [${checked ? "x" : " "}] Linked plan has completion notes with commits and verification results
+    - [${checked ? "x" : " "}] Required checks pass
+    - [${checked ? "x" : " "}] Card moved to Completed and board state verified`;
+}
+
+function bootstrapPlanMarkdown(context) {
+  const id = context.bootstrapTicketId;
+
+  return `# ${id} ${bootstrapTitle}
+
+- Ticket: ${id}
+- Board: ${boardReference()}
+- Card: ${id} ${bootstrapTitle}
+- Created: ${context.today}
+
+## Summary
+
+Set up repo-local agent instructions, Obsidian Kanban issue tracking, ticket numbering, stable repo plan files, and domain documentation conventions for this project.
+
+## Context
+
+This project uses an Obsidian Kanban board for visible ticket state and stores long-lived execution plans in stable Markdown files under \`docs/plans/\`.
+
+## Plan
+
+- [x] Create or update \`AGENTS.md\`
+- [x] Create or update \`CLAUDE.md\`
+- [x] Create \`docs/agents/*\`
+- [x] Create \`docs/agents/project-workflow.json\`
+- [x] Create \`docs/agents/ticket-sequence.json\`
+- [x] Create \`docs/plans/\`
+- [x] Create Obsidian Kanban board
+- [x] Configure Kanban tag colors
+
+## Verification
+
+- [x] Board path mirrors the project path relative to home
+- [x] Ticket sequence state is initialized
+- [x] Bootstrap card links to this plan
+- [x] Generated ticket workflow includes deterministic closeout rules
+- [x] Triage tags are Obsidian tags
+- [x] Kanban tag colors are present in board/template settings
+
+## Outcome
+
+Project workflow initialized.
+`;
+}
+
+function boardMarkdown(context, templateInfo) {
+  const lanes = lanesWithCompleted(templateInfo.lanes);
+  const settings = {
+    "kanban-plugin": "board",
+    "list-collapse": lanes.map(() => false),
+    "lane-width": 400,
+    ...templateInfo.settings,
+  };
+  const planPath = `docs/plans/${ticketPlanFileName(context.bootstrapTicketId, bootstrapTitle)}`;
+  const sections = lanes.map((lane) => {
+    if (lane !== "Completed") return `## ${lane}\n`;
+
+    return `## Completed
+
+${cardMarkdown({
+      checked: true,
+      id: context.bootstrapTicketId,
+      title: bootstrapTitle,
+      description:
+        "Set up repo-local agent instructions, Obsidian Kanban issue tracking, ticket numbering, stable repo plan files, and domain documentation conventions for this project.",
+      planPath,
+      tags: [bootstrapTriageTag, ...bootstrapTopicTags],
+    })}
+`;
+  });
+
+  return `---
+kanban-plugin: board
+---
+
+${sections.join("\n\n")}
+
+
+${settingsBlock(settings)}
+`;
+}
+
+function upsertAgentSkillsBlock(markdown, block) {
+  const normalizedBlock = `${block.trimEnd()}\n`;
+  const heading = /^## Agent skills\s*$/m.exec(markdown);
+
+  if (!heading) {
+    return `${markdown.trimEnd()}\n\n${normalizedBlock}`;
+  }
+
+  const start = heading.index;
+  const rest = markdown.slice(start + heading[0].length);
+  const nextLevelTwoHeading = /\n##(?!#)\s+/.exec(rest);
+  const end =
+    nextLevelTwoHeading === null
+      ? markdown.length
+      : start + heading[0].length + nextLevelTwoHeading.index + 1;
+  const prefix = markdown.slice(0, start).trimEnd();
+  const suffix = markdown.slice(end).replace(/^\n+/, "");
+
+  return `${prefix ? `${prefix}\n\n` : ""}${normalizedBlock}${
+    suffix ? `\n${suffix}` : ""
+  }`;
+}
+
+function agentSkillsBlock(context) {
+  return `## Agent skills
+
+### Issue tracker
+
+Issues and implementation tickets live in the Obsidian Kanban board ${boardReference()}. External PRs are not a triage surface. See \`docs/agents/issue-tracker.md\`.
+
+### Ticket workflow
+
+Create tickets with \`new_project_ticket.mjs\`; it allocates stable IDs, appends a Kanban card, creates a linked plan in \`docs/plans/\`, and advances \`docs/agents/ticket-sequence.json\`. Update ticket status with \`update_project_ticket.mjs\` after code changes and during closeout. See \`docs/agents/ticket-workflow.md\`.
+
+When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the Definition of Done or acceptance criteria, add completion notes to the linked plan, move the Kanban card to \`Completed\`, check applicable TODO/DoD boxes, and re-read the board to confirm the lane.
+
+### Execution plans
+
+Execution plan Markdown files live under stable paths in \`docs/plans/\`, for example \`docs/plans/${ticketPlanFileName(
+    context.bootstrapTicketId,
+    bootstrapTitle,
+  )}\`. Do not use lane-named status folders for new plans; old \`docs/plans/Backlog/\`, \`docs/plans/In Progress/\`, and \`docs/plans/Completed/\` folders are legacy.
+
+### Triage labels
+
+Use the default five-role triage vocabulary as Obsidian tags configured with Kanban plugin colors: \`#needs-triage\`, \`#needs-info\`, \`#ready-for-agent\`, \`#ready-for-human\`, and \`#wontfix\`. Add, remove, or replace those tags in the card's \`Description\` section. See \`docs/agents/triage-labels.md\`.
+
+### Domain docs
+
+This is a single-context repo: read root \`CONTEXT.md\` and \`docs/adr/\` if they exist. See \`docs/agents/domain.md\`.
+`;
+}
+
+function updateAgentsFile(context, options, actions) {
+  const agentsPath = path.join(context.projectRoot, "AGENTS.md");
+  const current =
+    readFileIfExists(agentsPath) ??
+    "# Agent Instructions\n\nThis file is the source of truth for repo-local agent guidance. Keep shared instructions here; `CLAUDE.md` is only a thin wrapper that points Claude Code back to this file.\n";
+  const updated = upsertAgentSkillsBlock(current, agentSkillsBlock(context));
+  writeIfChanged(agentsPath, updated, options, actions);
+}
+
+function claudeWrapper() {
+  return `# Claude Code Instructions
+
+Read and follow \`AGENTS.md\`. It is the canonical source for repo-local agent guidance.
+
+Do not duplicate shared instructions in this file. Update \`AGENTS.md\` instead.
+`;
+}
+
+function isClaudeWrapper(markdown) {
+  return (
+    markdown.includes("AGENTS.md") &&
+    markdown.includes("canonical source") &&
+    markdown.includes("Do not duplicate")
+  );
+}
+
+function updateClaudeFile(context, options, actions) {
+  const claudePath = path.join(context.projectRoot, "CLAUDE.md");
+  const current = readFileIfExists(claudePath);
+
+  if (current !== null && current !== claudeWrapper() && !isClaudeWrapper(current) && !options.force) {
+    actions.push(
+      `skip existing ${displayPath(claudePath)}; merge shared guidance into AGENTS.md, then rerun with --force`,
+    );
+    return;
+  }
+
+  writeIfChanged(claudePath, claudeWrapper(), options, actions);
+}
+
+function projectWorkflowConfig(context) {
+  return {
+    provider: "obsidian-kanban",
+    vaultEnvVar,
+    boardPathStrategy: "home-relative-project-path",
+    planDir: "docs/plans",
+    ticketSequencePath: "docs/agents/ticket-sequence.json",
+  };
+}
+
+function ticketSequence(context, next = 2) {
+  return {
+    prefix: context.ticketPrefix,
+    next,
+    width: ticketWidth,
+  };
+}
+
+function issueTrackerDoc(context) {
+  return `# Issue Tracker: Obsidian Kanban
+
+Issues, implementation tickets, and project task state for this repo live in an Obsidian Kanban board.
+
+## Board
+
+- Vault env var: \`${vaultEnvVar}\`
+- Board path strategy: derive from the vault root and this repository's path relative to \`$HOME\`
+- Board filename strategy: project title plus \` Kanban.md\`
+- Template path: \`$${vaultEnvVar}/Z - Templates/Kanban Template.md\`
+- Local env file: \`.env\` (ignored)
+- Env example: \`.env.example\`
+- Tool config: \`docs/agents/project-workflow.json\`
+- Ticket sequence: \`docs/agents/ticket-sequence.json\`
+- Execution plans: \`docs/plans/*.md\`
+
+The board path mirrors the project path relative to the home directory. Keep the vault root in \`.env\`, not in committed docs.
+
+## Lanes
+
+- \`Backlog\` means not started.
+- \`In Progress\` means actively being worked.
+- \`Completed\` means done.
+
+The current ticket status is the card's lane on the Obsidian board. Do not encode current status in the plan file path.
+
+## Ticket Format
+
+When a skill says "publish to the issue tracker", use the ticket utility documented in \`docs/agents/ticket-workflow.md\`. It creates the Kanban card and linked plan file together.
+
+Each ticket card should stay short and include:
+
+- title line using the Kanban checkbox/card format, with the stable ticket ID first
+- \`## Description\` with all tags and a 1-3 sentence summary
+- \`## Implementation Details\` with \`Ticket\` and \`Plan\` bullets
+- \`## TODO Checklist\`
+- \`## Definition of Done\`
+
+Use this shape:
+
+\`\`\`markdown
+- [ ] # <span style="color: #77ccd5">${context.ticketPrefix}-0002 Ticket title</span>
+
+    ## Description
+
+    #needs-triage #optional-topic
+
+    1-3 sentence summary.
+
+    ## Implementation Details
+
+    - Ticket: ${context.ticketPrefix}-0002
+    - Plan: docs/plans/${context.ticketPrefix}-0002-ticket-title.md
+\`\`\`
+
+For implementation work, record longform context, plans, and verification notes in the linked \`docs/plans/*.md\` file. Keep the card scannable.
+
+## Fetching Tickets
+
+When a skill says "fetch the relevant ticket", read the referenced card in the Obsidian Kanban board and then read its linked plan file under \`docs/plans/\`. Use the card and plan as the source of truth for scope, TODOs, Definition of Done, acceptance criteria, constraints, and verification.
+
+## Pull Requests
+
+External PRs are not currently treated as a request surface for this project. Track requested work in the Obsidian Kanban board unless the user explicitly says otherwise.
+`;
+}
+
+function ticketWorkflowDoc(context) {
+  return `# Ticket Workflow
+
+How agents create and maintain project tickets.
+
+## Source Of Truth
+
+- Visible ticket state lives in the Obsidian Kanban board.
+- Current status is the card's lane on the board.
+- Longform execution context lives in stable Markdown files under \`docs/plans/\`.
+- Ticket numbering state lives in committed repo file \`docs/agents/ticket-sequence.json\`.
+- Tool-readable workflow config lives in \`docs/agents/project-workflow.json\`.
+- Local vault root lives in ignored \`.env\` as \`${vaultEnvVar}\`.
+
+Lane-named plan folders such as \`docs/plans/Backlog/\`, \`docs/plans/In Progress/\`, and \`docs/plans/Completed/\` are legacy. Do not create new plan files there.
+
+## Creating Tickets
+
+Use the bundled utility from the repo root:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/new_project_ticket.mjs" \\
+  --title "Ticket title" \\
+  --description "Short 1-3 sentence summary." \\
+  --tag optional-topic
+\`\`\`
+
+Only \`--title\` is required. Defaults:
+
+- \`--project-root\`: current directory
+- \`--lane\`: \`Backlog\`
+- \`--triage\`: \`needs-triage\`
+- \`--description\`: placeholder summary for the agent to replace
+
+The utility:
+
+- reconciles \`docs/agents/ticket-sequence.json\` against existing board cards and \`docs/plans/\`
+- blocks exact duplicate titles unless \`--allow-duplicate\` is passed
+- allocates the next \`${context.ticketPrefix}-0000\` style ID
+- appends the new card to the bottom of the target lane
+- creates the linked plan file under \`docs/plans/\`
+- advances \`docs/agents/ticket-sequence.json\`
+
+## Updating Ticket Status
+
+Use the status utility whenever implementation state changes:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/update_project_ticket.mjs" \\
+  --ticket "${context.ticketPrefix}-0002" \\
+  --lane "In Progress" \\
+  --note "Started implementation after updating code."
+\`\`\`
+
+Rules:
+
+- After changing implementation code for a ticket, move the card to \`In Progress\` unless it is already there.
+- If acceptance criteria are complete, move the card to \`Completed\` with \`--complete\`.
+- Status lives in the board lane, not in the linked plan filename or a plan \`Status\` field.
+- The utility appends progress or completion notes to the linked plan when \`--note\` is provided.
+
+## Tags
+
+All tags live in the card's \`Description\` section.
+
+The utility adds one triage tag by default: \`#needs-triage\`. Agents may replace it with exactly one of:
+
+- \`#needs-triage\`
+- \`#needs-info\`
+- \`#ready-for-agent\`
+- \`#ready-for-human\`
+- \`#wontfix\`
+
+Topic tags can be added with repeatable \`--tag\` flags or edited directly on the card.
+
+## Working Tickets
+
+Before implementing a ticket:
+
+1. Read the Kanban card from the board.
+2. Read the linked plan under \`docs/plans/\`.
+3. Identify the requested goal, constraints, TODO checklist, Definition of Done, acceptance criteria, and verification commands.
+4. If the card and plan conflict, stop and ask the user which source to update.
+
+After changing code for a ticket, run \`update_project_ticket.mjs --ticket <id> --lane "In Progress"\` before continuing unless the ticket is already complete.
+
+## Completing Tickets
+
+A ticket is not complete until tracker closeout is done. Before saying the work is complete:
+
+1. Verify every Definition of Done or acceptance criterion, or explicitly record why an item is not applicable.
+2. Add completion notes to the linked plan with implementation summary, commits, verification commands, and results.
+3. Run \`update_project_ticket.mjs --ticket <id> --lane "Completed" --complete --note "<summary>"\`.
+4. Check applicable TODO and Definition of Done boxes on the card.
+5. Add concise commit and verification bullets to the card's \`Implementation Details\` when useful.
+6. Re-read the board and confirm the card is in \`Completed\` before the final response.
+
+If closeout is blocked by filesystem permissions, missing board access, or unresolved acceptance criteria, do not call the ticket complete. Report the blocker and leave the card out of \`Completed\`.
+
+## Plan Files
+
+Plan files are long-lived project history. Keep them after completion.
+
+Plan files should not contain a \`Status\` field. Use the card's lane on the board for current status.
+`;
+}
+
+function triageLabelsDoc() {
+  const rows = triageTags
+    .map(
+      (tag) =>
+        `| \`${tag.role}\` | \`#${tag.tag}\` | ${tag.colorName} | ${tag.meaning} |`,
+    )
+    .join("\n");
+
+  return `# Triage Labels
+
+The skills speak in terms of five canonical triage roles. This file maps those roles to the strings used in this repo's issue tracker.
+
+| Skill role | Obsidian tag | Kanban color | Meaning |
+| --- | --- | --- | --- |
+${rows}
+
+When a skill mentions a role, use the corresponding Obsidian tag from this table. In the Obsidian Kanban board, record tags in the ticket's \`Description\` section.
+
+## Kanban Tag Lines
+
+Use these exact tags:
+
+\`\`\`markdown
+#needs-triage
+#needs-info
+#ready-for-agent
+#ready-for-human
+#wontfix
+\`\`\`
+
+The colors are configured in the Obsidian Kanban plugin's vault-level \`tag-colors\` setting and in board-local Kanban settings, so these tags render consistently across Kanban boards in the vault.
+`;
+}
+
+function domainDoc() {
+  return `# Domain Docs
+
+How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+
+## Layout
+
+This is a single-context repo.
+
+## Before Exploring, Read These
+
+- \`CONTEXT.md\` at the repo root, if it exists.
+- \`docs/adr/\`, if it exists.
+
+If these files do not exist, proceed silently. Do not flag their absence or create them upfront. The domain-modeling workflows can create them later when terms or decisions are actually resolved.
+
+## File Structure
+
+Expected single-context layout:
+
+\`\`\`text
+/
+|-- CONTEXT.md
+|-- docs/adr/
+|   |-- 0001-example-decision.md
+|   \`-- 0002-example-decision.md
+\`-- src/
+\`\`\`
+
+## Use The Project Vocabulary
+
+When output names a domain concept in an issue title, refactor proposal, hypothesis, or test name, use the term as defined in \`CONTEXT.md\` when that file exists.
+
+If the concept you need is not in the glossary yet, either avoid inventing new language or note the gap for a future domain-modeling pass.
+
+## Flag ADR Conflicts
+
+If output contradicts an existing ADR, surface it explicitly instead of silently overriding it.
+`;
+}
+
+function updateDocs(context, options, actions) {
+  const docsDir = path.join(context.projectRoot, "docs", "agents");
+  writeGeneratedFile(path.join(docsDir, "issue-tracker.md"), issueTrackerDoc(context), options, actions);
+  writeGeneratedFile(path.join(docsDir, "ticket-workflow.md"), ticketWorkflowDoc(context), options, actions);
+  writeGeneratedFile(path.join(docsDir, "triage-labels.md"), triageLabelsDoc(), options, actions);
+  writeGeneratedFile(path.join(docsDir, "domain.md"), domainDoc(), options, actions);
+  writeGeneratedFile(
+    path.join(docsDir, "project-workflow.json"),
+    `${JSON.stringify(projectWorkflowConfig(context), null, 2)}\n`,
+    options,
+    actions,
+  );
+  writeStateFileIfMissing(
+    path.join(docsDir, "ticket-sequence.json"),
+    `${JSON.stringify(ticketSequence(context), null, 2)}\n`,
+    options,
+    actions,
+  );
+}
+
+function updatePlanArtifacts(context, options, actions) {
+  const planDir = path.join(context.projectRoot, "docs", "plans");
+  ensureDir(planDir, options, actions);
+
+  writeGeneratedFile(
+    path.join(planDir, ticketPlanFileName(context.bootstrapTicketId, bootstrapTitle)),
+    bootstrapPlanMarkdown(context),
+    options,
+    actions,
+  );
+}
+
+function updateBoard(context, templateInfo, options, actions) {
+  const current = readFileIfExists(context.boardPath);
+  if (current === null) {
+    writeIfChanged(context.boardPath, boardMarkdown(context, templateInfo), options, actions);
+    return;
+  }
+
+  writeIfChanged(context.boardPath, updateMarkdownSettings(current), options, actions);
+}
+
+function run() {
+  const options = parseArgs(process.argv.slice(2));
+  const actions = [];
+  ensureDir(options.projectRoot, options, actions);
+  updateLocalConfigFiles(options.projectRoot, options, actions);
+
+  const projectEnv = readProjectEnv(options.projectRoot);
+  const vaultPath = resolveRequiredVault(options.projectRoot, projectEnv, options);
+  const projectName = path.basename(options.projectRoot);
+  const projectTitle = titleCase(projectName);
+  const relativeProjectPath = projectRelativePath(options.projectRoot);
+  const boardPath = path.join(vaultPath, relativeProjectPath, `${projectTitle} Kanban.md`);
+  const templatePath = path.join(vaultPath, "Z - Templates", "Kanban Template.md");
+  const ticketPrefix = options.ticketPrefix || defaultTicketPrefix(projectName);
+  const today = new Date().toISOString().slice(0, 10);
+  const context = {
+    projectRoot: options.projectRoot,
+    projectName,
+    projectTitle,
+    ticketPrefix,
+    bootstrapTicketId: ticketId(ticketPrefix, bootstrapTicketNumber),
+    relativeProjectPath,
+    vault: vaultPath,
+    boardPath,
+    templatePath,
+    today,
+  };
+
+  const templateInfo = updateTemplateSettings(templatePath, options, actions);
+  updatePluginSettings(vaultPath, options, actions);
+  updateBoard(context, templateInfo, options, actions);
+  updatePlanArtifacts(context, options, actions);
+  updateAgentsFile(context, options, actions);
+  updateClaudeFile(context, options, actions);
+  updateDocs(context, options, actions);
+
+  console.log(options.dryRun ? "Dry run complete:" : "Setup complete:");
+  for (const action of actions) {
+    console.log(`- ${action}`);
+  }
+}
+
+try {
+  run();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}

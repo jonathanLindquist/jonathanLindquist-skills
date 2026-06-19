@@ -1,0 +1,4 @@
+interface:
+  display_name: "Setup Project Workflow"
+  short_description: "Bootstrap repo agents and Obsidian Kanban"
+  default_prompt: "Use $setup-project-workflow to initialize this repo's agent docs and Obsidian Kanban board."
