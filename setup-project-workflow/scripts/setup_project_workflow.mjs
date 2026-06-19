@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const bundledKanbanTemplatePath = path.resolve(scriptDir, "..", "assets", "kanban-template.md");
+const repoKanbanTemplatePath = "docs/agents/kanban-template.md";
 const homeDir = os.homedir();
 const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
 const defaultLanes = ["Backlog", "In Progress", "Completed"];
@@ -457,73 +461,33 @@ function updatePluginSettings(vault, options, actions) {
   writeIfChanged(pluginSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, options, actions);
 }
 
-function templateCard() {
-  return `- [ ] # <span style="color: #77ccd5">ABC-0001 Ticket title</span>
-    
-    ## Description
-    
-    #needs-triage #optional-topic
-    
-    1-3 sentence summary.
-    
-    ## Implementation Details
-    
-    - Ticket: ABC-0001
-    - Plan: docs/plans/ABC-0001-ticket-title.md
-    
-    ## TODO Checklist
-    Items to implement:
-    
-    - [ ] Fill in linked plan
-    
-    ## Definition of Done
-    
-    All checks are completed and the verification steps below pass:
-    
-    - [ ] Linked plan has verification notes
-    - [ ] Required checks pass`;
-}
-
-function templateMarkdown(lanes, settings) {
-  const normalizedLanes = lanesWithCompleted(lanes);
-  const sections = normalizedLanes.map((lane) => {
-    if (lane === "Backlog") return `## ${lane}\n\n${templateCard()}`;
-    return `## ${lane}\n`;
-  });
-
-  return `---
-
-kanban-plugin: board
-
----
-
-${sections.join("\n\n")}
-
-
-${settingsBlock({
-    "kanban-plugin": "board",
-    "list-collapse": normalizedLanes.map(() => false),
-    "lane-width": 400,
-    ...settings,
-  })}
-`;
-}
-
-function updateTemplateSettings(templatePath, options, actions) {
-  const template = readFileIfExists(templatePath);
+function bundledKanbanTemplate() {
+  const template = readFileIfExists(bundledKanbanTemplatePath);
   if (template === null) {
-    actions.push(`skip ${displayPath(templatePath)}; template does not exist`);
-    return { lanes: defaultLanes, settings: {} };
+    throw new Error(`Missing bundled Kanban template: ${bundledKanbanTemplatePath}`);
+  }
+  return template;
+}
+
+function templateInfo(markdown) {
+  const lanes = extractLanes(markdown);
+  const { settings } = extractSettings(markdown);
+  return { lanes, settings };
+}
+
+function updateRepoKanbanTemplate(projectRoot, options, actions) {
+  const templatePath = path.join(projectRoot, repoKanbanTemplatePath);
+  const current = readFileIfExists(templatePath);
+
+  if (current === null) {
+    const template = bundledKanbanTemplate();
+    writeIfChanged(templatePath, template, options, actions);
+    return templateInfo(template);
   }
 
-  const lanes = extractLanes(template);
-  const { settings } = extractSettings(template);
-  writeIfChanged(templatePath, templateMarkdown(lanes, settings), options, actions);
-
-  return {
-    lanes,
-    settings,
-  };
+  const updated = updateMarkdownSettings(current);
+  writeIfChanged(templatePath, updated, options, actions);
+  return templateInfo(updated);
 }
 
 function cardMarkdown({ checked, id, title, description, planPath, tags }) {
@@ -738,6 +702,7 @@ function projectWorkflowConfig(context) {
     provider: "obsidian-kanban",
     vaultEnvVar,
     boardPathStrategy: "home-relative-project-path",
+    kanbanTemplatePath: repoKanbanTemplatePath,
     planDir: "docs/plans",
     ticketSequencePath: "docs/agents/ticket-sequence.json",
   };
@@ -761,7 +726,7 @@ Issues, implementation tickets, and project task state for this repo live in an 
 - Vault env var: \`${vaultEnvVar}\`
 - Board path strategy: derive from the vault root and this repository's path relative to \`$HOME\`
 - Board filename strategy: project title plus \` Kanban.md\`
-- Template path: \`$${vaultEnvVar}/Z - Templates/Kanban Template.md\`
+- Kanban template path: \`${repoKanbanTemplatePath}\`
 - Local env file: \`.env\` (ignored)
 - Env example: \`.env.example\`
 - Tool config: \`docs/agents/project-workflow.json\`
@@ -1055,7 +1020,6 @@ function run() {
   const projectTitle = titleCase(projectName);
   const relativeProjectPath = projectRelativePath(options.projectRoot);
   const boardPath = path.join(vaultPath, relativeProjectPath, `${projectTitle} Kanban.md`);
-  const templatePath = path.join(vaultPath, "Z - Templates", "Kanban Template.md");
   const ticketPrefix = options.ticketPrefix || defaultTicketPrefix(projectName);
   const today = new Date().toISOString().slice(0, 10);
   const context = {
@@ -1067,11 +1031,10 @@ function run() {
     relativeProjectPath,
     vault: vaultPath,
     boardPath,
-    templatePath,
     today,
   };
 
-  const templateInfo = updateTemplateSettings(templatePath, options, actions);
+  const templateInfo = updateRepoKanbanTemplate(options.projectRoot, options, actions);
   updatePluginSettings(vaultPath, options, actions);
   updateBoard(context, templateInfo, options, actions);
   updatePlanArtifacts(context, options, actions);

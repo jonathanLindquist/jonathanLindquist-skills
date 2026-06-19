@@ -13,6 +13,7 @@ Bootstrap a project so future agents use the same durable local workflow:
 - `docs/agents/` records issue tracker, ticket workflow, triage tag, and domain-doc conventions.
 - `docs/agents/project-workflow.json` is the machine-readable workflow config.
 - `docs/agents/ticket-sequence.json` stores the committed per-project ticket sequence.
+- `docs/agents/kanban-template.md` stores the repo-local Obsidian Kanban template copied from this skill's bundled asset.
 - Execution plan Markdown files live at stable paths directly under `docs/plans/`, for example `docs/plans/HAG-0001-ticket-title.md`.
 - Lane-named plan folders such as `docs/plans/Backlog/`, `docs/plans/In Progress/`, and `docs/plans/Completed/` are legacy. Do not create new plans there.
 - Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Definition of Done boxes checked.
@@ -50,11 +51,11 @@ Bootstrap a project so future agents use the same durable local workflow:
    - The board exists under the vault path mirroring the project path relative to `$HOME`.
    - `.env.example` documents `PROJECT_WORKFLOW_OBSIDIAN_VAULT`.
    - `.env` exists locally, is gitignored, and contains the actual vault root.
-   - The board and the vault template both include `tag-colors` in their `%% kanban:settings` blocks.
+   - The board and `docs/agents/kanban-template.md` both include `tag-colors` in their `%% kanban:settings` blocks.
    - The vault-wide Kanban plugin settings include the same `tag-colors` entries.
    - `AGENTS.md` contains exactly one `## Agent skills` section.
    - `CLAUDE.md` remains a pointer to `AGENTS.md`.
-   - `docs/agents/project-workflow.json` describes the board derivation strategy, plan directory, and ticket sequence file.
+   - `docs/agents/project-workflow.json` describes the board derivation strategy, repo-local Kanban template, plan directory, and ticket sequence file.
    - `docs/agents/ticket-sequence.json` exists and is not reset on reruns.
    - The bootstrap card has a ticket ID and linked plan file under `docs/plans/`.
    - Generated `AGENTS.md` and `docs/agents/ticket-workflow.md` include the ticket start and completion closeout rules.
@@ -73,6 +74,7 @@ $HOME/projects/utilities/example-tool/
     |-- agents/
     |   |-- domain.md
     |   |-- issue-tracker.md
+    |   |-- kanban-template.md
     |   |-- project-workflow.json
     |   |-- ticket-sequence.json
     |   |-- ticket-workflow.md
@@ -86,7 +88,6 @@ And create or update under `$PROJECT_WORKFLOW_OBSIDIAN_VAULT`:
 ```text
 $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 |-- .obsidian/plugins/obsidian-kanban/data.json
-|-- Z - Templates/Kanban Template.md
 `-- projects/utilities/example-tool/Example Tool Kanban.md
 ```
 

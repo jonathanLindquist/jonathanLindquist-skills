@@ -17,6 +17,7 @@ Clone the repo, then install the skills into `~/.agents/skills`:
 ```bash
 git clone <this-repo-url> ~/jonathanLindquist-skills
 cd ~/jonathanLindquist-skills
+npm install
 node scripts/install.mjs
 ```
 
@@ -32,6 +33,12 @@ Install one skill:
 node scripts/install.mjs --skill setup-project-workflow
 ```
 
+Install one skill and immediately sync provider-specific skill folders through `skill-organizer`:
+
+```bash
+node scripts/install.mjs --skill setup-project-workflow --sync-providers
+```
+
 If your agent runtime reads another skills directory, install into that target explicitly:
 
 ```bash
@@ -40,14 +47,50 @@ node scripts/install.mjs --target "$HOME/.codex/skills"
 
 The installer will not replace an existing skill directory unless you pass `--replace`.
 
+## Update
+
+When a skill is already installed in `~/.agents/skills`, update one skill with:
+
+```bash
+node scripts/install.mjs --update --skill setup-project-workflow
+```
+
+`--update` is shorthand for `--replace --sync-providers` and requires one `--skill`. It replaces `~/.agents/skills/setup-project-workflow` using the selected install mode, then runs:
+
+```bash
+skill-organizer --all-providers --skill setup-project-workflow
+```
+
+By default, update mode installs a symlink to this repo. Add `--mode copy` when you want `~/.agents/skills/setup-project-workflow` to be a standalone copy. Either way, `skill-organizer` then refreshes provider-specific skill folders, such as Claude Code, for only the updated skill.
+
+If `skill-organizer` is not on `PATH`, pass its executable explicitly:
+
+```bash
+node scripts/install.mjs \
+  --update \
+  --skill setup-project-workflow \
+  --organizer-bin /path/to/skill-organizer
+```
+
+To sync a specific provider instead of every configured provider, repeat `--organizer-provider` with the provider flags you want:
+
+```bash
+node scripts/install.mjs \
+  --update \
+  --skill setup-project-workflow \
+  --organizer-provider --claude-code
+```
+
 ## `setup-project-workflow` Requirements
 
 Local tools:
 
 - `node`, for the bundled `.mjs` workflow scripts.
+- `npm`, to install the required `skill-organizer` dependency.
 - `git`, because the skill is designed for repository setup work.
 - Obsidian, for the local issue tracker.
 - The Obsidian Kanban plugin, for board lanes and tag colors.
+- `skill-organizer`, installed from this repo's pinned package dependency, for refreshing provider-specific skill folders from `~/.agents/skills`.
 - An agent runtime that can read skills from `~/.agents/skills`, or from whichever target you pass to the installer.
 
 Each project that uses the skill must have an ignored `.env` file with:
@@ -91,6 +134,7 @@ The skill creates or updates:
 - `.gitignore`, ensuring `.env` is ignored
 - `docs/agents/*`
 - `docs/plans/*`
+- `docs/agents/kanban-template.md`, copied from the skill's bundled template asset so the project carries its own Kanban template
 - an Obsidian Kanban board under the configured vault
 - Obsidian Kanban tag color settings where available
 

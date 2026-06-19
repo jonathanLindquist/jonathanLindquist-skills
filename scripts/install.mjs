@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultTarget = path.join(os.homedir(), ".agents", "skills");
+const localOrganizerBin = path.join(repoRoot, "node_modules", ".bin", "skill-organizer");
 const skillNamePattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const usage = `Usage:
   install.mjs [options]
@@ -14,6 +16,12 @@ Options:
   --target <path>    Skills directory. Defaults to ~/.agents/skills.
   --mode <mode>      symlink or copy. Defaults to symlink.
   --replace          Replace an existing installed skill.
+  --update           Replace one skill and run skill-organizer for it.
+  --sync-providers   Run skill-organizer after installing selected skills.
+  --organizer-bin <path>
+                     skill-organizer executable. Defaults to the local dependency, then PATH.
+  --organizer-provider <flag>
+                     Provider flag for skill-organizer. Repeatable. Defaults to --all-providers.
   --help             Show this help.
 `;
 
@@ -23,6 +31,10 @@ function parseArgs(argv) {
     target: defaultTarget,
     mode: "symlink",
     replace: false,
+    update: false,
+    syncProviders: false,
+    organizerBin: null,
+    organizerProviderFlags: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -36,6 +48,16 @@ function parseArgs(argv) {
       options.mode = requireValue(argv, ++index, arg);
     } else if (arg === "--replace") {
       options.replace = true;
+    } else if (arg === "--update") {
+      options.update = true;
+      options.replace = true;
+      options.syncProviders = true;
+    } else if (arg === "--sync-providers") {
+      options.syncProviders = true;
+    } else if (arg === "--organizer-bin") {
+      options.organizerBin = requireValue(argv, ++index, arg);
+    } else if (arg === "--organizer-provider") {
+      options.organizerProviderFlags.push(requireValue(argv, ++index, arg, { allowFlagValue: true }));
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage);
       process.exit(0);
@@ -45,18 +67,31 @@ function parseArgs(argv) {
   }
 
   if (options.skill) validateSkillName(options.skill);
+  if (options.update && !options.skill) {
+    throw new Error("--update requires --skill <name> so provider sync stays narrowly scoped.");
+  }
+
   if (!["symlink", "copy"].includes(options.mode)) {
     throw new Error(`Invalid --mode ${options.mode}. Expected symlink or copy.`);
   }
 
   options.target = path.resolve(expandHome(options.target));
+  options.organizerBin = expandHome(options.organizerBin || defaultOrganizerBin());
+  if (options.organizerProviderFlags.length === 0) {
+    options.organizerProviderFlags = ["--all-providers"];
+  }
+  for (const flag of options.organizerProviderFlags) {
+    if (!flag.startsWith("--")) {
+      throw new Error(`Invalid --organizer-provider ${flag}. Expected a flag beginning with --.`);
+    }
+  }
   validateTarget(options.target);
   return options;
 }
 
-function requireValue(argv, index, flag) {
+function requireValue(argv, index, flag, { allowFlagValue = false } = {}) {
   const value = argv[index];
-  if (!value || value.startsWith("--")) {
+  if (!value || (!allowFlagValue && value.startsWith("--"))) {
     throw new Error(`Missing value for ${flag}.\n\n${usage}`);
   }
   return value;
@@ -66,6 +101,10 @@ function expandHome(value) {
   if (value === "~") return os.homedir();
   if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
   return value;
+}
+
+function defaultOrganizerBin() {
+  return fs.existsSync(localOrganizerBin) ? localOrganizerBin : "skill-organizer";
 }
 
 function isValidSkillName(name) {
@@ -161,6 +200,27 @@ function installSkill(name, options) {
   console.log(`${name}: ${options.mode} -> ${destination}`);
 }
 
+function syncProviderSkills(skillNames, options) {
+  const args = [...options.organizerProviderFlags];
+  for (const skillName of skillNames) {
+    args.push("--skill", skillName);
+  }
+
+  console.log(`skill-organizer: ${options.organizerBin} ${args.join(" ")}`);
+  const result = spawnSync(options.organizerBin, args, {
+    env: process.env,
+    stdio: "inherit",
+  });
+
+  if (result.error) {
+    throw new Error(`Failed to run skill-organizer: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`skill-organizer exited with status ${result.status}.`);
+  }
+}
+
 function run() {
   const options = parseArgs(process.argv.slice(2));
   const names = options.skill ? [options.skill] : topLevelSkillNames();
@@ -171,6 +231,10 @@ function run() {
 
   for (const name of names) {
     installSkill(name, options);
+  }
+
+  if (options.syncProviders) {
+    syncProviderSkills(names, options);
   }
 }
 
