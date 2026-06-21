@@ -144,8 +144,13 @@ Create a new ticket:
 node "$HOME/.agents/skills/setup-project-workflow/scripts/new_project_ticket.mjs" \
   --project-root "$PWD" \
   --title "Ticket title" \
-  --description "Short summary."
+  --description "Short summary." \
+  --todo "First implementation step." \
+  --acceptance "Observable result required for completion." \
+  --verification "Command or review step that proves completion."
 ```
+
+Title-only tickets are allowed as `#needs-triage` drafts with explicit placeholders. `--triage ready-for-agent` requires a real description plus at least one `--todo`, `--acceptance`, and `--verification` field.
 
 Move a ticket:
 

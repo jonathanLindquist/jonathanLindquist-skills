@@ -5,29 +5,34 @@ kanban-plugin: board
 ## Backlog
 
 - [ ] # <span style="color: #77ccd5">ABC-0001 Ticket title</span>
-    
+
     ## Description
-    
+
     #needs-triage #optional-topic
-    
+
     1-3 sentence summary.
-    
+
     ## Implementation Details
-    
+
     - Ticket: ABC-0001
     - Plan: docs/plans/ABC-0001-ticket-title.md
-    
+
     ## TODO Checklist
     Items to implement:
-    
-    - [ ] Fill in linked plan
-    
+
+    - [ ] First ticket-specific implementation step
+
     ## Definition of Done
-    
-    All checks are completed and the verification steps below pass:
-    
-    - [ ] Linked plan has verification notes
-    - [ ] Required checks pass
+
+    Completion criteria:
+
+    - [ ] Observable ticket-specific result required for completion
+
+    ## Verification
+
+    Checks to run:
+
+    - [ ] Ticket-specific command or review check
 
 ## In Progress
 

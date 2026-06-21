@@ -490,37 +490,54 @@ function updateRepoKanbanTemplate(projectRoot, options, actions) {
   return templateInfo(updated);
 }
 
-function cardMarkdown({ checked, id, title, description, planPath, tags }) {
+function checklist(items, { checked = false, indent = "" } = {}) {
+  const checkChar = checked ? "x" : " ";
+  return items.map((item) => `${indent}- [${checkChar}] ${item}`).join("\n");
+}
+
+function cardMarkdown({
+  checked,
+  id,
+  title,
+  description,
+  planPath,
+  tags,
+  todos,
+  acceptance,
+  verification,
+}) {
   const checkChar = checked ? "x" : " ";
   const tagLine = tags.map((tag) => `#${tag}`).join(" ");
 
   return `- [${checkChar}] # <span style="color: #77ccd5">${id} ${title}</span>
-    
+
     ## Description
-    
+
     ${tagLine}
-    
+
     ${description}
-    
+
     ## Implementation Details
-    
+
     - Ticket: ${id}
     - Plan: ${planPath}
-    
+
     ## TODO Checklist
     Items to implement:
-    
-    - [${checked ? "x" : " "}] Read this card and the linked plan before implementation
-    - [${checked ? "x" : " "}] Fill in linked plan with scope and acceptance criteria
-    
+
+${checklist(todos, { checked, indent: "    " })}
+
     ## Definition of Done
-    
-    All checks are completed and the verification steps below pass:
-    
-    - [${checked ? "x" : " "}] Acceptance criteria or Definition of Done verified
-    - [${checked ? "x" : " "}] Linked plan has completion notes with commits and verification results
-    - [${checked ? "x" : " "}] Required checks pass
-    - [${checked ? "x" : " "}] Card moved to Completed and board state verified`;
+
+    Completion criteria:
+
+${checklist(acceptance, { checked, indent: "    " })}
+
+    ## Verification
+
+    Checks to run:
+
+${checklist(verification, { checked, indent: "    " })}`;
 }
 
 function bootstrapPlanMarkdown(context) {
@@ -589,6 +606,23 @@ ${cardMarkdown({
         "Set up repo-local agent instructions, Obsidian Kanban issue tracking, ticket numbering, stable repo plan files, and domain documentation conventions for this project.",
       planPath,
       tags: [bootstrapTriageTag, ...bootstrapTopicTags],
+      todos: [
+        "Create or update `AGENTS.md`",
+        "Create repo-local docs under `docs/agents/`",
+        "Create stable plan storage under `docs/plans/`",
+        "Create the Obsidian Kanban board and repo-local template",
+        "Configure canonical Kanban tag colors",
+      ],
+      acceptance: [
+        "Repo-local agent instructions point agents to the Kanban board and linked plans",
+        "Ticket sequence state is initialized without resetting existing tickets",
+        "Bootstrap plan and Kanban card link to each other",
+      ],
+      verification: [
+        "Board path mirrors the project path relative to home",
+        "Generated ticket workflow includes deterministic closeout rules",
+        "Kanban tag colors are present in board/template settings",
+      ],
     })}
 `;
   });
@@ -636,9 +670,9 @@ Issues and implementation tickets live in the Obsidian Kanban board ${boardRefer
 
 ### Ticket workflow
 
-Create tickets with \`new_project_ticket.mjs\`; it allocates stable IDs, appends a Kanban card, creates a linked plan in \`docs/plans/\`, and advances \`docs/agents/ticket-sequence.json\`. Update ticket status with \`update_project_ticket.mjs\` after code changes and during closeout. See \`docs/agents/ticket-workflow.md\`.
+Create tickets with \`new_project_ticket.mjs\`; it allocates stable IDs, appends a Kanban card, creates a linked plan in \`docs/plans/\`, and advances \`docs/agents/ticket-sequence.json\`. Use repeatable \`--todo\`, \`--acceptance\`, and \`--verification\` fields when a ticket is ready for agent implementation. Update ticket status with \`update_project_ticket.mjs\` after code changes and during closeout. See \`docs/agents/ticket-workflow.md\`.
 
-When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the Definition of Done or acceptance criteria, add completion notes to the linked plan, move the Kanban card to \`Completed\`, check applicable TODO/DoD boxes, and re-read the board to confirm the lane.
+When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the Definition of Done, acceptance criteria, and verification items; add completion notes to the linked plan; move the Kanban card to \`Completed\`; check applicable TODO, DoD, and Verification boxes; and re-read the board to confirm the lane.
 
 ### Execution plans
 
@@ -754,6 +788,7 @@ Each ticket card should stay short and include:
 - \`## Implementation Details\` with \`Ticket\` and \`Plan\` bullets
 - \`## TODO Checklist\`
 - \`## Definition of Done\`
+- \`## Verification\`
 
 Use this shape:
 
@@ -770,9 +805,26 @@ Use this shape:
 
     - Ticket: ${context.ticketPrefix}-0002
     - Plan: docs/plans/${context.ticketPrefix}-0002-ticket-title.md
+
+    ## TODO Checklist
+    Items to implement:
+
+    - [ ] First ticket-specific implementation step
+
+    ## Definition of Done
+
+    Completion criteria:
+
+    - [ ] Observable ticket-specific result required for completion
+
+    ## Verification
+
+    Checks to run:
+
+    - [ ] Ticket-specific command or review check
 \`\`\`
 
-For implementation work, record longform context, plans, and verification notes in the linked \`docs/plans/*.md\` file. Keep the card scannable.
+For implementation work, record longform context, plans, and completion notes in the linked \`docs/plans/*.md\` file. Keep the card scannable. A \`#ready-for-agent\` card must have ticket-specific TODO, Definition of Done, and Verification items.
 
 ## Fetching Tickets
 
@@ -808,6 +860,9 @@ Use the bundled utility from the repo root:
 node "$HOME/.agents/skills/setup-project-workflow/scripts/new_project_ticket.mjs" \\
   --title "Ticket title" \\
   --description "Short 1-3 sentence summary." \\
+  --todo "First implementation step." \\
+  --acceptance "Observable result required for completion." \\
+  --verification "Command or review step that proves completion." \\
   --tag optional-topic
 \`\`\`
 
@@ -817,14 +872,17 @@ Only \`--title\` is required. Defaults:
 - \`--lane\`: \`Backlog\`
 - \`--triage\`: \`needs-triage\`
 - \`--description\`: placeholder summary for the agent to replace
+- \`--todo\`, \`--acceptance\`, \`--verification\`: explicit placeholders for the agent to replace
+
+\`--triage ready-for-agent\` requires \`--description\` plus at least one \`--todo\`, \`--acceptance\`, and \`--verification\` field. Leave incomplete tickets as \`#needs-triage\`.
 
 The utility:
 
 - reconciles \`docs/agents/ticket-sequence.json\` against existing board cards and \`docs/plans/\`
 - blocks exact duplicate titles unless \`--allow-duplicate\` is passed
 - allocates the next \`${context.ticketPrefix}-0000\` style ID
-- appends the new card to the bottom of the target lane
-- creates the linked plan file under \`docs/plans/\`
+- appends the new card to the bottom of the target lane with ticket-specific checklist sections
+- creates the linked plan file under \`docs/plans/\` with the same TODO, acceptance, and verification items
 - advances \`docs/agents/ticket-sequence.json\`
 
 ## Updating Ticket Status
@@ -874,10 +932,10 @@ After changing code for a ticket, run \`update_project_ticket.mjs --ticket <id> 
 
 A ticket is not complete until tracker closeout is done. Before saying the work is complete:
 
-1. Verify every Definition of Done or acceptance criterion, or explicitly record why an item is not applicable.
+1. Verify every Definition of Done, acceptance criterion, and verification item, or explicitly record why an item is not applicable.
 2. Add completion notes to the linked plan with implementation summary, commits, verification commands, and results.
 3. Run \`update_project_ticket.mjs --ticket <id> --lane "Completed" --complete --note "<summary>"\`.
-4. Check applicable TODO and Definition of Done boxes on the card.
+4. Check applicable TODO, Definition of Done, and Verification boxes on the card.
 5. Add concise commit and verification bullets to the card's \`Implementation Details\` when useful.
 6. Re-read the board and confirm the card is in \`Completed\` before the final response.
 

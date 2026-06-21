@@ -75,6 +75,122 @@ test("setup copies the bundled Kanban template into the target project", async (
   const board = await fs.readFile(boardPath, "utf8");
   assert.match(board, /TMP-0001 Initialize Project Workflow/);
   assert.match(board, /"tag-colors"/);
+  assert.doesNotMatch(board, /Read this card and the linked plan before implementation/);
+  assert.doesNotMatch(board, /Fill in linked plan with scope and acceptance criteria/);
+  assert.match(board, /Create or update `AGENTS\.md`/);
+});
+
+test("new ticket writes specific checklist fields to card and plan", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Capture backtesting vocabulary",
+    "--description",
+    "Document the backtesting terms agents should use before implementation.",
+    "--triage",
+    "ready-for-agent",
+    "--tag",
+    "docs",
+    "--todo",
+    "Review existing strategy docs for recurring backtesting terms.",
+    "--todo",
+    "Add canonical glossary entries to the linked plan.",
+    "--acceptance",
+    "The plan defines canonical terms for signals, trades, and results.",
+    "--verification",
+    "Review the linked plan for unresolved TODO placeholders.",
+  ]);
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected a Kanban board under the vault");
+  const board = await fs.readFile(boardPath, "utf8");
+  assert.match(board, /#ready-for-agent #docs/);
+  assert.match(board, /- \[ \] Review existing strategy docs for recurring backtesting terms\./);
+  assert.match(board, /- \[ \] Add canonical glossary entries to the linked plan\./);
+  assert.match(board, /- \[ \] The plan defines canonical terms for signals, trades, and results\./);
+  assert.match(board, /## Verification/);
+  assert.match(board, /- \[ \] Review the linked plan for unresolved TODO placeholders\./);
+  assert.doesNotMatch(board, /Fill in linked plan with scope and acceptance criteria/);
+
+  const planPath = path.join(
+    projectRoot,
+    "docs",
+    "plans",
+    "TMP-0002-capture-backtesting-vocabulary.md",
+  );
+  const plan = await fs.readFile(planPath, "utf8");
+  assert.match(plan, /- \[ \] Review existing strategy docs for recurring backtesting terms\./);
+  assert.match(plan, /- \[ \] Add canonical glossary entries to the linked plan\./);
+  assert.match(plan, /- \[ \] The plan defines canonical terms for signals, trades, and results\./);
+  assert.match(plan, /- \[ \] Review the linked plan for unresolved TODO placeholders\./);
+});
+
+test("ready-for-agent tickets require specific implementation fields", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  const result = runFail(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Incomplete ready ticket",
+    "--triage",
+    "ready-for-agent",
+  ]);
+
+  assert.match(
+    result.stderr,
+    /ready-for-agent tickets require --description, --todo, --acceptance, and --verification/,
+  );
+});
+
+test("title-only tickets remain draft needs-triage tickets with placeholders", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Draft ticket",
+  ]);
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected a Kanban board under the vault");
+  const board = await fs.readFile(boardPath, "utf8");
+  assert.match(board, /#needs-triage/);
+  assert.match(board, /TODO: replace with a 1-3 sentence summary\./);
+  assert.match(board, /TODO: add ticket-specific implementation steps before marking ready-for-agent\./);
+  assert.match(board, /TODO: add ticket-specific completion criteria before marking ready-for-agent\./);
+  assert.match(board, /TODO: add ticket-specific verification checks before marking ready-for-agent\./);
 });
 
 test("completed ticket insertion preserves existing completed card details", async (t) => {
@@ -124,6 +240,16 @@ function runOk(scriptPath, args) {
   });
 
   assert.equal(result.status, 0, result.stderr);
+  return result;
+}
+
+function runFail(scriptPath, args) {
+  const result = spawnSync(process.execPath, [scriptPath, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
   return result;
 }
 

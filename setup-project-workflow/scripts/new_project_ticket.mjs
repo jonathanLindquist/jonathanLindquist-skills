@@ -6,6 +6,12 @@ const homeDir = os.homedir();
 const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
 const defaultLane = "Backlog";
 const defaultTriage = "needs-triage";
+const draftDescription = "TODO: replace with a 1-3 sentence summary.";
+const draftTodo = "TODO: add ticket-specific implementation steps before marking ready-for-agent.";
+const draftAcceptance =
+  "TODO: add ticket-specific completion criteria before marking ready-for-agent.";
+const draftVerification =
+  "TODO: add ticket-specific verification checks before marking ready-for-agent.";
 const triageTags = new Set([
   "needs-triage",
   "needs-info",
@@ -24,6 +30,9 @@ Options:
   --lane <name>          Kanban lane. Defaults to Backlog.
   --triage <tag>         Triage tag without #. Defaults to needs-triage.
   --tag <tag>            Optional topic tag without #. Repeatable.
+  --todo <text>          Ticket-specific implementation step. Repeatable.
+  --acceptance <text>    Ticket-specific completion criterion. Repeatable.
+  --verification <text>  Ticket-specific check or command. Repeatable.
   --allow-duplicate      Allow exact duplicate normalized titles.
   --help                 Show this help.
 `;
@@ -36,7 +45,11 @@ function parseArgs(argv) {
     lane: defaultLane,
     triage: defaultTriage,
     tags: [],
+    todos: [],
+    acceptance: [],
+    verification: [],
     allowDuplicate: false,
+    hasDescription: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,6 +67,12 @@ function parseArgs(argv) {
       options.triage = normalizeTag(argv[++index]);
     } else if (arg === "--tag") {
       options.tags.push(normalizeTag(argv[++index]));
+    } else if (arg === "--todo") {
+      options.todos.push(argv[++index]);
+    } else if (arg === "--acceptance") {
+      options.acceptance.push(argv[++index]);
+    } else if (arg === "--verification") {
+      options.verification.push(argv[++index]);
     } else if (arg === "--allow-duplicate") {
       options.allowDuplicate = true;
     } else if (arg === "--help" || arg === "-h") {
@@ -69,10 +88,13 @@ function parseArgs(argv) {
   }
 
   options.title = options.title.trim();
-  options.description =
-    options.description?.trim() || "TODO: replace with a 1-3 sentence summary.";
+  options.hasDescription = Boolean(options.description?.trim());
+  options.description = options.description?.trim() || draftDescription;
   options.projectRoot = path.resolve(expandHome(options.projectRoot));
   options.lane = options.lane.trim();
+  options.todos = cleanedList(options.todos);
+  options.acceptance = cleanedList(options.acceptance);
+  options.verification = cleanedList(options.verification);
 
   if (!triageTags.has(options.triage)) {
     throw new Error(
@@ -80,7 +102,28 @@ function parseArgs(argv) {
     );
   }
 
+  if (options.triage === "ready-for-agent") {
+    const missing = [];
+    if (!options.hasDescription) missing.push("--description");
+    if (options.todos.length === 0) missing.push("--todo");
+    if (options.acceptance.length === 0) missing.push("--acceptance");
+    if (options.verification.length === 0) missing.push("--verification");
+
+    if (missing.length > 0) {
+      throw new Error(
+        [
+          "ready-for-agent tickets require --description, --todo, --acceptance, and --verification.",
+          `Missing: ${missing.join(", ")}`,
+        ].join("\n"),
+      );
+    }
+  }
+
   return options;
+}
+
+function cleanedList(values) {
+  return values.map((value) => String(value ?? "").trim()).filter(Boolean);
 }
 
 function expandHome(value) {
@@ -316,39 +359,56 @@ function nearDuplicateTitles(existingTitles, title) {
   });
 }
 
-function cardMarkdown({ id, title, description, planPath, tags }) {
+function checklist(items, fallback, { indent = "", checked = false } = {}) {
+  const checkChar = checked ? "x" : " ";
+  const values = items.length > 0 ? items : [fallback];
+  return values.map((item) => `${indent}- [${checkChar}] ${item}`).join("\n");
+}
+
+function cardMarkdown({
+  id,
+  title,
+  description,
+  planPath,
+  tags,
+  todos,
+  acceptance,
+  verification,
+}) {
   const tagLine = tags.map((tag) => `#${tag}`).join(" ");
 
   return `- [ ] # <span style="color: #77ccd5">${id} ${title}</span>
-    
+
     ## Description
-    
+
     ${tagLine}
-    
+
     ${description}
-    
+
     ## Implementation Details
-    
+
     - Ticket: ${id}
     - Plan: ${planPath}
-    
+
     ## TODO Checklist
     Items to implement:
-    
-    - [ ] Read this card and the linked plan before implementation
-    - [ ] Fill in linked plan with scope and acceptance criteria
-    
+
+${checklist(todos, draftTodo, { indent: "    " })}
+
     ## Definition of Done
-    
-    All checks are completed and the verification steps below pass:
-    
-    - [ ] Acceptance criteria or Definition of Done verified
-    - [ ] Linked plan has completion notes with commits and verification results
-    - [ ] Required checks pass
-    - [ ] Card moved to Completed and board state verified`;
+
+    Completion criteria:
+
+${checklist(acceptance, draftAcceptance, { indent: "    " })}
+
+    ## Verification
+
+    Checks to run:
+
+${checklist(verification, draftVerification, { indent: "    " })}`;
 }
 
-function planMarkdown({ id, title, description }) {
+function planMarkdown({ id, title, description, todos, acceptance, verification }) {
   const today = new Date().toISOString().slice(0, 10);
 
   return `# ${id} ${title}
@@ -368,19 +428,19 @@ Relevant background, links, constraints, prior decisions, and source references.
 
 ## Plan
 
-- [ ] First implementation step
+${checklist(todos, draftTodo)}
 
 ## Acceptance Criteria
 
-- [ ] Observable result or behavior required for completion.
+${checklist(acceptance, draftAcceptance)}
 
 ## Verification
 
-Commands, checks, or review steps required.
+${checklist(verification, draftVerification)}
 
 ## Outcome
 
-Fill in when completed with implementation summary, commits, verification commands, and results. Move the Kanban card to Completed only after this is filled in and the Definition of Done is checked.
+Fill in when completed with implementation summary, commits, verification commands, and results. Move the Kanban card to Completed only after this is filled in and the applicable card checkboxes are checked.
 `;
 }
 
@@ -469,6 +529,9 @@ function run() {
     description: options.description,
     planPath: relativePlanPath,
     tags,
+    todos: options.todos,
+    acceptance: options.acceptance,
+    verification: options.verification,
   });
   const updatedBoard = insertCardAtBottomOfLane(board, options.lane, card);
 
@@ -479,6 +542,9 @@ function run() {
       id,
       title: options.title,
       description: options.description,
+      todos: options.todos,
+      acceptance: options.acceptance,
+      verification: options.verification,
     }),
   );
   writeText(
