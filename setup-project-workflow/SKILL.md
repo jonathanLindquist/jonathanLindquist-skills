@@ -23,6 +23,7 @@ Bootstrap a project so future agents use the same durable local workflow:
 - `docs/agents/project-workflow.json` is the machine-readable workflow config.
 - `docs/agents/ticket-sequence.json` stores the committed per-project ticket sequence.
 - `docs/agents/kanban-template.md` stores the repo-local Obsidian Kanban template copied from this skill's bundled asset.
+- `verify_project_workflow.mjs` is the deterministic final gate for setup and setup reruns.
 - Execution plan Markdown files live at stable paths directly under `docs/plans/`, for example `docs/plans/HAG-0001-ticket-title.md`.
 - Lane-named plan folders such as `docs/plans/Backlog/`, `docs/plans/In Progress/`, and `docs/plans/Completed/` are legacy. Do not create new plans there.
 - Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Acceptance Criteria/Verification boxes checked.
@@ -55,13 +56,20 @@ Bootstrap a project so future agents use the same durable local workflow:
    node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --ticket-prefix HAG
    ```
 
-4. If existing generated docs differ and the script reports a skip, inspect the existing file and merge project-specific content into `AGENTS.md`. Use `--force` only after preserving anything the user needs.
-5. Verify the board and docs:
+4. Rerun the same setup command when this skill is enhanced and a project was already initialized. The command is intended to be idempotent: it preserves existing ticket sequence state, reuses the existing ticket prefix, keeps current board cards, updates generated machine-readable config, and refreshes safe generated surfaces.
+5. If existing generated docs differ and the script reports a skip, inspect the existing file and merge project-specific content into `AGENTS.md`. Use `--force` only after preserving anything the user needs. `--force` refreshes generated docs and the repo-local Kanban template, but it still preserves ticket sequence state and current board cards.
+6. Setup must always finish by running the verifier. The setup script does this automatically on non-dry-run setup. Run it manually after resolving any skipped generated-file refresh:
+
+   ```bash
+   node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
+   ```
+
+7. The verifier checks the board and docs:
    - The board exists under the vault path mirroring the project path relative to `$HOME`.
    - `.env.example` documents `PROJECT_WORKFLOW_OBSIDIAN_VAULT`.
    - `.env` exists locally, is gitignored, and contains the actual vault root.
    - The board and `docs/agents/kanban-template.md` both include `tag-colors` in their `%% kanban:settings` blocks.
-   - The vault-wide Kanban plugin settings include the same `tag-colors` entries.
+   - The vault-wide Kanban plugin settings include the same `tag-colors` entries when that settings file exists.
    - `AGENTS.md` contains exactly one `## Agent skills` section.
    - `CLAUDE.md` remains a pointer to `AGENTS.md`.
    - `docs/agents/project-workflow.json` describes the board derivation strategy, repo-local Kanban template, plan directory, and ticket sequence file.
@@ -162,6 +170,8 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 - Do not overwrite substantive existing `CLAUDE.md` content without preserving it in `AGENTS.md` first.
 - Do not commit machine-specific vault paths. Keep the actual vault root in ignored `.env` as `PROJECT_WORKFLOW_OBSIDIAN_VAULT`; committed docs should describe derivation from `$HOME` and that env var.
 - Do not rely on process-level fallback env vars for required local config. If `.env` is missing or incomplete, stop and ask the user to populate it.
+- Do not skip final setup verification. Non-dry-run setup must end with `verify_project_workflow.mjs --project-root "$PWD"` passing.
+- Do not recalculate a different ticket prefix on rerun. Preserve the existing `docs/agents/ticket-sequence.json` prefix unless the user explicitly performs a prefix migration.
 - Do not reset an existing `docs/agents/ticket-sequence.json`.
 - Store execution plan Markdown files directly under `docs/plans/` with stable ticket-ID filenames.
 - Treat `docs/plans/*.md` as long-lived project history, not disposable scratch.

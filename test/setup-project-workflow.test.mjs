@@ -25,6 +25,12 @@ const updateTicketScript = path.join(
   "scripts",
   "update_project_ticket.mjs",
 );
+const verifyScript = path.join(
+  repoRoot,
+  "setup-project-workflow",
+  "scripts",
+  "verify_project_workflow.mjs",
+);
 
 test("setup copies the bundled Kanban template into the target project", async (t) => {
   const workspace = await tempWorkspace(t);
@@ -47,6 +53,8 @@ test("setup copies the bundled Kanban template into the target project", async (
   );
 
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Project workflow verification passed:/);
+  assert.match(result.stdout, /Setup complete\./);
 
   const templatePath = path.join(projectRoot, "docs", "agents", "kanban-template.md");
   const template = await fs.readFile(templatePath, "utf8");
@@ -84,6 +92,81 @@ test("setup copies the bundled Kanban template into the target project", async (
   assert.doesNotMatch(board, /Read this card and the linked plan before implementation/);
   assert.doesNotMatch(board, /Fill in linked plan with scope and acceptance criteria/);
   assert.match(board, /Create or update `AGENTS\.md`/);
+});
+
+test("verification command fails when required setup artifacts are missing", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  await fs.rm(path.join(projectRoot, "AGENTS.md"));
+
+  const result = runFail(verifyScript, ["--project-root", projectRoot]);
+  assert.match(result.stderr, /Project workflow verification failed:/);
+  assert.match(result.stderr, /AGENTS\.md must contain exactly one ## Agent skills section/);
+});
+
+test("setup can be rerun on an initialized project without resetting ticket state", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Follow up ticket",
+  ]);
+
+  const rerun = runOk(setupScript, ["--project-root", projectRoot]);
+  assert.match(rerun.stdout, /Project workflow verification passed:/);
+
+  const sequence = JSON.parse(
+    await fs.readFile(path.join(projectRoot, "docs", "agents", "ticket-sequence.json"), "utf8"),
+  );
+  assert.equal(sequence.prefix, "TMP");
+  assert.equal(sequence.next, 3);
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected a Kanban board under the vault");
+  const board = await fs.readFile(boardPath, "utf8");
+  assert.equal([...board.matchAll(/TMP-0001 Initialize Project Workflow/g)].length, 1);
+});
+
+test("setup rejects reruns with a different ticket prefix", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  const result = runFail(setupScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket-prefix",
+    "NEW",
+  ]);
+
+  assert.match(result.stderr, /Existing ticket sequence uses prefix TMP/);
 });
 
 test("new ticket writes specific checklist fields to card and plan", async (t) => {

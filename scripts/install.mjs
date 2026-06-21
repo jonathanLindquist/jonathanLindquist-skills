@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultTarget = path.join(os.homedir(), ".agents", "skills");
-const localOrganizerBin = path.join(repoRoot, "node_modules", ".bin", "skill-organizer");
+const localAgentSyncBin = path.join(repoRoot, "node_modules", ".bin", "agent-sync");
 const skillNamePattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const usage = `Usage:
   install.mjs [options]
@@ -16,12 +16,12 @@ Options:
   --target <path>    Skills directory. Defaults to ~/.agents/skills.
   --mode <mode>      symlink or copy. Defaults to symlink.
   --replace          Replace an existing installed skill.
-  --update           Replace one skill and run skill-organizer for it.
-  --sync-providers   Run skill-organizer after installing selected skills.
-  --organizer-bin <path>
-                     skill-organizer executable. Defaults to the local dependency, then PATH.
-  --organizer-provider <flag>
-                     Provider flag for skill-organizer. Repeatable. Defaults to --all-providers.
+  --update           Replace one skill and run agent-sync for it.
+  --sync-providers   Run agent-sync after installing selected skills.
+  --agent-sync-bin <path>
+                     agent-sync executable. Defaults to the local dependency, then PATH.
+  --agent-sync-provider <flag>
+                     Provider flag for agent-sync. Repeatable. Defaults to --all-providers.
   --help             Show this help.
 `;
 
@@ -33,8 +33,8 @@ function parseArgs(argv) {
     replace: false,
     update: false,
     syncProviders: false,
-    organizerBin: null,
-    organizerProviderFlags: [],
+    agentSyncBin: null,
+    agentSyncProviderFlags: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,10 +54,10 @@ function parseArgs(argv) {
       options.syncProviders = true;
     } else if (arg === "--sync-providers") {
       options.syncProviders = true;
-    } else if (arg === "--organizer-bin") {
-      options.organizerBin = requireValue(argv, ++index, arg);
-    } else if (arg === "--organizer-provider") {
-      options.organizerProviderFlags.push(requireValue(argv, ++index, arg, { allowFlagValue: true }));
+    } else if (arg === "--agent-sync-bin") {
+      options.agentSyncBin = requireValue(argv, ++index, arg);
+    } else if (arg === "--agent-sync-provider") {
+      options.agentSyncProviderFlags.push(requireValue(argv, ++index, arg, { allowFlagValue: true }));
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage);
       process.exit(0);
@@ -76,13 +76,13 @@ function parseArgs(argv) {
   }
 
   options.target = path.resolve(expandHome(options.target));
-  options.organizerBin = expandHome(options.organizerBin || defaultOrganizerBin());
-  if (options.organizerProviderFlags.length === 0) {
-    options.organizerProviderFlags = ["--all-providers"];
+  options.agentSyncBin = expandHome(options.agentSyncBin || defaultAgentSyncBin());
+  if (options.agentSyncProviderFlags.length === 0) {
+    options.agentSyncProviderFlags = ["--all-providers"];
   }
-  for (const flag of options.organizerProviderFlags) {
+  for (const flag of options.agentSyncProviderFlags) {
     if (!flag.startsWith("--")) {
-      throw new Error(`Invalid --organizer-provider ${flag}. Expected a flag beginning with --.`);
+      throw new Error(`Invalid --agent-sync-provider ${flag}. Expected a flag beginning with --.`);
     }
   }
   validateTarget(options.target);
@@ -103,8 +103,8 @@ function expandHome(value) {
   return value;
 }
 
-function defaultOrganizerBin() {
-  return fs.existsSync(localOrganizerBin) ? localOrganizerBin : "skill-organizer";
+function defaultAgentSyncBin() {
+  return fs.existsSync(localAgentSyncBin) ? localAgentSyncBin : "agent-sync";
 }
 
 function isValidSkillName(name) {
@@ -201,23 +201,23 @@ function installSkill(name, options) {
 }
 
 function syncProviderSkills(skillNames, options) {
-  const args = [...options.organizerProviderFlags];
+  const args = [...options.agentSyncProviderFlags];
   for (const skillName of skillNames) {
     args.push("--skill", skillName);
   }
 
-  console.log(`skill-organizer: ${options.organizerBin} ${args.join(" ")}`);
-  const result = spawnSync(options.organizerBin, args, {
+  console.log(`agent-sync: ${options.agentSyncBin} ${args.join(" ")}`);
+  const result = spawnSync(options.agentSyncBin, args, {
     env: process.env,
     stdio: "inherit",
   });
 
   if (result.error) {
-    throw new Error(`Failed to run skill-organizer: ${result.error.message}`);
+    throw new Error(`Failed to run agent-sync: ${result.error.message}`);
   }
 
   if (result.status !== 0) {
-    throw new Error(`skill-organizer exited with status ${result.status}.`);
+    throw new Error(`agent-sync exited with status ${result.status}.`);
   }
 }
 

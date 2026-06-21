@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledKanbanTemplatePath = path.resolve(scriptDir, "..", "assets", "kanban-template.md");
+const verifyProjectWorkflowScriptPath = path.resolve(scriptDir, "verify_project_workflow.mjs");
 const repoKanbanTemplatePath = "docs/agents/kanban-template.md";
 const homeDir = os.homedir();
 const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
@@ -76,6 +78,8 @@ Options:
   --dry-run                Print planned writes without changing files.
   --force                  Overwrite generated docs and non-wrapper CLAUDE.md.
   --help                   Show this help.
+
+Non-dry-run setup always runs verify_project_workflow.mjs before exiting.
 `;
 
 function parseArgs(argv) {
@@ -243,6 +247,22 @@ function ensureDir(dir, options, actions) {
 
 function readFileIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : null;
+}
+
+function readExistingTicketSequence(projectRoot) {
+  const sequencePath = path.join(projectRoot, "docs", "agents", "ticket-sequence.json");
+  const current = readFileIfExists(sequencePath);
+  if (current === null) return null;
+
+  try {
+    const sequence = JSON.parse(current);
+    if (!sequence || typeof sequence.prefix !== "string" || !sequence.prefix.trim()) {
+      throw new Error("prefix must be a non-empty string");
+    }
+    return sequence;
+  } catch (error) {
+    throw new Error(`Invalid existing ticket sequence ${displayPath(sequencePath)}: ${error.message}`);
+  }
 }
 
 function writeIfChanged(filePath, content, options, actions) {
@@ -478,9 +498,14 @@ function templateInfo(markdown) {
 function updateRepoKanbanTemplate(projectRoot, options, actions) {
   const templatePath = path.join(projectRoot, repoKanbanTemplatePath);
   const current = readFileIfExists(templatePath);
+  const template = bundledKanbanTemplate();
 
   if (current === null) {
-    const template = bundledKanbanTemplate();
+    writeIfChanged(templatePath, template, options, actions);
+    return templateInfo(template);
+  }
+
+  if (options.force) {
     writeIfChanged(templatePath, template, options, actions);
     return templateInfo(template);
   }
@@ -575,6 +600,7 @@ This project uses an Obsidian Kanban board for visible ticket state and stores l
 - [x] Generated ticket workflow includes deterministic closeout rules
 - [x] Triage tags are Obsidian tags
 - [x] Kanban tag colors are present in board/template settings
+- [x] Project workflow verification command passes
 
 ## Outcome
 
@@ -620,6 +646,7 @@ ${cardMarkdown({
         "Board path mirrors the project path relative to home",
         "Generated ticket workflow includes deterministic closeout rules",
         "Kanban tag colors are present in board/template settings",
+        "Project workflow verification command passes",
       ],
     })}
 `;
@@ -671,6 +698,16 @@ Issues and implementation tickets live in the Obsidian Kanban board ${boardRefer
 Create tickets with \`new_project_ticket.mjs\`; it allocates stable IDs, appends a Kanban card, creates a linked plan in \`docs/plans/\`, and advances \`docs/agents/ticket-sequence.json\`. Use repeatable \`--todo\`, \`--acceptance\`, and \`--verification\` fields when a ticket is ready for agent implementation. Update ticket status with \`update_project_ticket.mjs\` after code changes and during closeout. See \`docs/agents/ticket-workflow.md\`.
 
 When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the acceptance criteria and verification items; add completion notes to the linked plan; move the Kanban card to \`Completed\`; check applicable TODO, Acceptance Criteria, and Verification boxes; and re-read the board to confirm the lane.
+
+### Project setup verification
+
+After setup or any rerun of setup, the setup command must finish by running:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
+\`\`\`
+
+Run the same command manually after resolving any skipped generated-file refresh or protected-file merge.
 
 ### Execution plans
 
@@ -737,6 +774,8 @@ function projectWorkflowConfig(context) {
     kanbanTemplatePath: repoKanbanTemplatePath,
     planDir: "docs/plans",
     ticketSequencePath: "docs/agents/ticket-sequence.json",
+    verifyCommand:
+      'node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"',
   };
 }
 
@@ -762,6 +801,7 @@ Issues, implementation tickets, and project task state for this repo live in an 
 - Local env file: \`.env\` (ignored)
 - Env example: \`.env.example\`
 - Tool config: \`docs/agents/project-workflow.json\`
+- Verification command: \`verify_project_workflow.mjs\`
 - Ticket sequence: \`docs/agents/ticket-sequence.json\`
 - Execution plans: \`docs/plans/*.md\`
 
@@ -829,6 +869,16 @@ When a skill says "fetch the relevant ticket", read the referenced card in the O
 ## Pull Requests
 
 External PRs are not currently treated as a request surface for this project. Track requested work in the Obsidian Kanban board unless the user explicitly says otherwise.
+
+## Workflow Verification
+
+Run this command after setup, after rerunning setup, and after resolving any generated-file skips:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
+\`\`\`
+
+The setup command runs it automatically at the end of every non-dry-run setup.
 `;
 }
 
@@ -845,6 +895,7 @@ How agents create and maintain project tickets.
 - Ticket numbering state lives in committed repo file \`docs/agents/ticket-sequence.json\`.
 - Tool-readable workflow config lives in \`docs/agents/project-workflow.json\`.
 - Local vault root lives in ignored \`.env\` as \`${vaultEnvVar}\`.
+- Setup verification is performed by \`verify_project_workflow.mjs\`, which the setup command runs automatically after non-dry-run setup.
 
 Lane-named plan folders such as \`docs/plans/Backlog/\`, \`docs/plans/In Progress/\`, and \`docs/plans/Completed/\` are legacy. Do not create new plan files there.
 
@@ -1026,7 +1077,7 @@ function updateDocs(context, options, actions) {
   writeGeneratedFile(path.join(docsDir, "ticket-workflow.md"), ticketWorkflowDoc(context), options, actions);
   writeGeneratedFile(path.join(docsDir, "triage-labels.md"), triageLabelsDoc(), options, actions);
   writeGeneratedFile(path.join(docsDir, "domain.md"), domainDoc(), options, actions);
-  writeGeneratedFile(
+  writeIfChanged(
     path.join(docsDir, "project-workflow.json"),
     `${JSON.stringify(projectWorkflowConfig(context), null, 2)}\n`,
     options,
@@ -1062,6 +1113,23 @@ function updateBoard(context, templateInfo, options, actions) {
   writeIfChanged(context.boardPath, updateMarkdownSettings(current), options, actions);
 }
 
+function runVerification(projectRoot) {
+  const result = spawnSync(
+    process.execPath,
+    [verifyProjectWorkflowScriptPath, "--project-root", projectRoot],
+    {
+      encoding: "utf8",
+    },
+  );
+
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error("Project workflow verification failed.");
+  }
+}
+
 function run() {
   const options = parseArgs(process.argv.slice(2));
   const actions = [];
@@ -1074,7 +1142,22 @@ function run() {
   const projectTitle = titleCase(projectName);
   const relativeProjectPath = projectRelativePath(options.projectRoot);
   const boardPath = path.join(vaultPath, relativeProjectPath, `${projectTitle} Kanban.md`);
-  const ticketPrefix = options.ticketPrefix || defaultTicketPrefix(projectName);
+  const existingSequence = readExistingTicketSequence(options.projectRoot);
+  if (
+    existingSequence?.prefix &&
+    options.ticketPrefix &&
+    options.ticketPrefix !== existingSequence.prefix
+  ) {
+    throw new Error(
+      [
+        `Existing ticket sequence uses prefix ${existingSequence.prefix}.`,
+        `Refusing to rerun setup with different --ticket-prefix ${options.ticketPrefix}.`,
+        "Update docs/agents/ticket-sequence.json intentionally before changing a project prefix.",
+      ].join("\n"),
+    );
+  }
+
+  const ticketPrefix = options.ticketPrefix || existingSequence?.prefix || defaultTicketPrefix(projectName);
   const today = new Date().toISOString().slice(0, 10);
   const context = {
     projectRoot: options.projectRoot,
@@ -1096,10 +1179,19 @@ function run() {
   updateClaudeFile(context, options, actions);
   updateDocs(context, options, actions);
 
-  console.log(options.dryRun ? "Dry run complete:" : "Setup complete:");
+  console.log(options.dryRun ? "Dry run complete:" : "Setup writes complete:");
   for (const action of actions) {
     console.log(`- ${action}`);
   }
+
+  if (options.dryRun) {
+    console.log("- skip verification; dry run did not change project state");
+    return;
+  }
+
+  console.log("Running project workflow verification:");
+  runVerification(options.projectRoot);
+  console.log("Setup complete.");
 }
 
 try {

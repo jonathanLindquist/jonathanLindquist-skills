@@ -10,18 +10,18 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const installScript = path.join(repoRoot, "scripts", "install.mjs");
 const skillName = "setup-project-workflow";
 
-test("initial install can sync the selected skill through skill-organizer", async (t) => {
+test("initial install can sync the selected skill through agent-sync", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
-  const organizer = await fakeOrganizer(workspace);
+  const agentSync = await fakeAgentSync(workspace);
 
   const result = runInstall(
     [
       "--skill",
       skillName,
       "--sync-providers",
-      "--organizer-bin",
-      organizer.binPath,
+      "--agent-sync-bin",
+      agentSync.binPath,
     ],
     homeDir,
   );
@@ -31,13 +31,13 @@ test("initial install can sync the selected skill through skill-organizer", asyn
     await fs.readlink(path.join(homeDir, ".agents", "skills", skillName)),
     path.join(repoRoot, skillName),
   );
-  assert.deepEqual(await organizer.calls(), [["--all-providers", "--skill", skillName]]);
+  assert.deepEqual(await agentSync.calls(), [["--all-providers", "--skill", skillName]]);
 });
 
 test("update replaces an existing installed skill and syncs only that skill", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
-  const organizer = await fakeOrganizer(workspace);
+  const agentSync = await fakeAgentSync(workspace);
   const installedSkill = path.join(homeDir, ".agents", "skills", skillName);
   await fs.mkdir(installedSkill, { recursive: true });
   await fs.writeFile(path.join(installedSkill, "SKILL.md"), "old skill\n");
@@ -49,8 +49,8 @@ test("update replaces an existing installed skill and syncs only that skill", as
       skillName,
       "--mode",
       "copy",
-      "--organizer-bin",
-      organizer.binPath,
+      "--agent-sync-bin",
+      agentSync.binPath,
     ],
     homeDir,
   );
@@ -58,41 +58,41 @@ test("update replaces an existing installed skill and syncs only that skill", as
   assert.equal(result.status, 0, result.stderr);
   const copiedSkill = await fs.readFile(path.join(installedSkill, "SKILL.md"), "utf8");
   assert.match(copiedSkill, /^name: setup-project-workflow/m);
-  assert.deepEqual(await organizer.calls(), [["--all-providers", "--skill", skillName]]);
+  assert.deepEqual(await agentSync.calls(), [["--all-providers", "--skill", skillName]]);
 });
 
 test("update refuses to run without an explicit skill", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
-  const organizer = await fakeOrganizer(workspace);
+  const agentSync = await fakeAgentSync(workspace);
 
-  const result = runInstall(["--update", "--organizer-bin", organizer.binPath], homeDir);
+  const result = runInstall(["--update", "--agent-sync-bin", agentSync.binPath], homeDir);
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--update requires --skill <name>/);
-  await assert.rejects(fs.readFile(organizer.logPath, "utf8"), { code: "ENOENT" });
+  await assert.rejects(fs.readFile(agentSync.logPath, "utf8"), { code: "ENOENT" });
 });
 
-test("sync can target a specific organizer provider flag", async (t) => {
+test("sync can target a specific agent-sync provider flag", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
-  const organizer = await fakeOrganizer(workspace);
+  const agentSync = await fakeAgentSync(workspace);
 
   const result = runInstall(
     [
       "--skill",
       skillName,
       "--sync-providers",
-      "--organizer-bin",
-      organizer.binPath,
-      "--organizer-provider",
+      "--agent-sync-bin",
+      agentSync.binPath,
+      "--agent-sync-provider",
       "--claude-code",
     ],
     homeDir,
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(await organizer.calls(), [["--claude-code", "--skill", skillName]]);
+  assert.deepEqual(await agentSync.calls(), [["--claude-code", "--skill", skillName]]);
 });
 
 function runInstall(args, homeDir) {
@@ -114,9 +114,9 @@ async function tempWorkspace(t) {
   return workspace;
 }
 
-async function fakeOrganizer(workspace) {
-  const binPath = path.join(workspace, "fake-skill-organizer.mjs");
-  const logPath = path.join(workspace, "organizer-calls.jsonl");
+async function fakeAgentSync(workspace) {
+  const binPath = path.join(workspace, "fake-agent-sync.mjs");
+  const logPath = path.join(workspace, "agent-sync-calls.jsonl");
   await fs.writeFile(
     binPath,
     `#!/usr/bin/env node

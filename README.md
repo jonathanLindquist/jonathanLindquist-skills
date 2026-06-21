@@ -33,7 +33,7 @@ Install one skill:
 node scripts/install.mjs --skill setup-project-workflow
 ```
 
-Install one skill and immediately sync provider-specific skill folders through `skill-organizer`:
+Install one skill and immediately sync provider-specific skill folders through `agent-sync`:
 
 ```bash
 node scripts/install.mjs --skill setup-project-workflow --sync-providers
@@ -58,27 +58,27 @@ node scripts/install.mjs --update --skill setup-project-workflow
 `--update` is shorthand for `--replace --sync-providers` and requires one `--skill`. It replaces `~/.agents/skills/setup-project-workflow` using the selected install mode, then runs:
 
 ```bash
-skill-organizer --all-providers --skill setup-project-workflow
+agent-sync --all-providers --skill setup-project-workflow
 ```
 
-By default, update mode installs a symlink to this repo. Add `--mode copy` when you want `~/.agents/skills/setup-project-workflow` to be a standalone copy. Either way, `skill-organizer` then refreshes provider-specific skill folders, such as Claude Code, for only the updated skill.
+By default, update mode installs a symlink to this repo. Add `--mode copy` when you want `~/.agents/skills/setup-project-workflow` to be a standalone copy. Either way, `agent-sync` then refreshes provider-specific skill folders, such as Claude Code, for only the updated skill.
 
-If `skill-organizer` is not on `PATH`, pass its executable explicitly:
+If `agent-sync` is not on `PATH`, pass its executable explicitly:
 
 ```bash
 node scripts/install.mjs \
   --update \
   --skill setup-project-workflow \
-  --organizer-bin /path/to/skill-organizer
+  --agent-sync-bin /path/to/agent-sync
 ```
 
-To sync a specific provider instead of every configured provider, repeat `--organizer-provider` with the provider flags you want:
+To sync a specific provider instead of every configured provider, repeat `--agent-sync-provider` with the provider flags you want:
 
 ```bash
 node scripts/install.mjs \
   --update \
   --skill setup-project-workflow \
-  --organizer-provider --claude-code
+  --agent-sync-provider --claude-code
 ```
 
 ## `setup-project-workflow` Requirements
@@ -86,11 +86,11 @@ node scripts/install.mjs \
 Local tools:
 
 - `node`, for the bundled `.mjs` workflow scripts.
-- `npm`, to install the required `skill-organizer` dependency.
+- `npm`, to install the required `agent-sync` dependency.
 - `git`, because the skill is designed for repository setup work.
 - Obsidian, for the local issue tracker.
 - The Obsidian Kanban plugin, for board lanes and tag colors.
-- `skill-organizer`, installed from this repo's pinned package dependency, for refreshing provider-specific skill folders from `~/.agents/skills`.
+- `agent-sync`, installed from this repo's pinned package dependency, for refreshing provider-specific skill folders from `~/.agents/skills`.
 - An agent runtime that can read skills from `~/.agents/skills`, or from whichever target you pass to the installer.
 
 Each project that uses the skill must have an ignored `.env` file with:
@@ -137,6 +137,15 @@ The skill creates or updates:
 - `docs/agents/kanban-template.md`, copied from the skill's bundled template asset so the project carries its own Kanban template
 - an Obsidian Kanban board under the configured vault
 - Obsidian Kanban tag color settings where available
+
+Non-dry-run setup always ends by running:
+
+```bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" \
+  --project-root "$PWD"
+```
+
+Run the same setup command again when this skill is enhanced and a project was already initialized. Reruns preserve `docs/agents/ticket-sequence.json`, reuse the existing ticket prefix, keep current board cards, and refresh generated workflow config. If generated docs or the repo-local Kanban template need a forced refresh, preserve any project-specific edits first and rerun setup with `--force`; setup will run verification again at the end.
 
 Create a new ticket:
 
