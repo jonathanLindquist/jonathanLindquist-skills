@@ -9,7 +9,8 @@ description: >-
   configured Kanban tag colors. Use when the user asks to initialize a new
   project/repo, set up project workflow, apply this project workflow pattern,
   create the Obsidian issue tracker for a repo, or make a new repo ready for
-  the engineering skills.
+  the engineering skills. It can optionally scaffold project-local Codex
+  auto-compaction config and handoff hooks.
 disable-model-invocation: true
 ---
 
@@ -23,6 +24,7 @@ Bootstrap a project so future agents use the same durable local workflow:
 - `docs/agents/project-workflow.json` is the machine-readable workflow config.
 - `docs/agents/ticket-sequence.json` stores the committed per-project ticket sequence.
 - `docs/agents/kanban-template.md` stores the repo-local Obsidian Kanban template copied from this skill's bundled asset.
+- `docs/agents/codex-auto-compact.md` records whether project-local Codex auto-compaction is enabled, its computed token limit, and caveats.
 - Execution plan Markdown files live at stable paths directly under `docs/plans/`, for example `docs/plans/HAG-0001-ticket-title.md`.
 - Lane-named plan folders such as `docs/plans/Backlog/`, `docs/plans/In Progress/`, and `docs/plans/Completed/` are legacy. Do not create new plans there.
 - Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Acceptance Criteria/Verification boxes checked.
@@ -53,10 +55,16 @@ Bootstrap a project so future agents use the same durable local workflow:
    node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --dry-run
    node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --force
    node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --ticket-prefix HAG
+   node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --enable-codex-auto-compact
    ```
 
-4. If existing generated docs differ and the script reports a skip, inspect the existing file and merge project-specific content into `AGENTS.md`. Use `--force` only after preserving anything the user needs.
-5. Verify the board and docs:
+4. Use optional Codex auto-compaction flags only when the project should opt into earlier project-local compaction:
+   - `--enable-codex-auto-compact` writes a managed `.codex/config.toml` block, `.codex/compact-prompt.md`, and `.codex/hooks/write_compaction_handoff.mjs`.
+   - `--disable-codex-auto-compact` removes only the managed config block; it leaves generated prompt/hook files in place.
+   - `--codex-context-window <tokens>` controls the context window used to compute the absolute token limit. Default: `128000`.
+   - `--codex-auto-compact-threshold-percent <percent>` controls the compaction threshold and must stay below `60`. Default: `55`.
+5. If existing generated docs differ and the script reports a skip, inspect the existing file and merge project-specific content into `AGENTS.md`. Use `--force` only after preserving anything the user needs.
+6. Verify the board and docs:
    - The board exists under the vault path mirroring the project path relative to `$HOME`.
    - `.env.example` documents `PROJECT_WORKFLOW_OBSIDIAN_VAULT`.
    - `.env` exists locally, is gitignored, and contains the actual vault root.
@@ -65,9 +73,11 @@ Bootstrap a project so future agents use the same durable local workflow:
    - `AGENTS.md` contains exactly one `## Agent skills` section.
    - `CLAUDE.md` remains a pointer to `AGENTS.md`.
    - `docs/agents/project-workflow.json` describes the board derivation strategy, repo-local Kanban template, plan directory, and ticket sequence file.
+   - `docs/agents/project-workflow.json` includes `codexAutoCompact.enabled`, computed `tokenLimit`, and generated Codex paths.
    - `docs/agents/ticket-sequence.json` exists and is not reset on reruns.
    - The bootstrap card has a ticket ID and linked plan file under `docs/plans/`.
    - Generated `AGENTS.md` and `docs/agents/ticket-workflow.md` include the ticket start and completion closeout rules.
+   - When Codex auto-compaction is enabled, `.codex/config.toml` contains the managed setup block, `.codex/compact-prompt.md` tells agents to read `.codex/handoffs/latest.md`, and `.gitignore` ignores `.codex/handoffs/`.
 
 ## Generated Pattern
 
@@ -79,8 +89,14 @@ $HOME/projects/utilities/example-tool/
 |-- CLAUDE.md
 |-- .env.example
 |-- .gitignore
+|-- .codex/                       # only when Codex auto-compaction is enabled
+|   |-- config.toml
+|   |-- compact-prompt.md
+|   `-- hooks/
+|       `-- write_compaction_handoff.mjs
 `-- docs/
     |-- agents/
+    |   |-- codex-auto-compact.md
     |   |-- domain.md
     |   |-- issue-tracker.md
     |   |-- kanban-template.md
@@ -154,6 +170,27 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 `-- .obsidian/plugins/obsidian-kanban/data.json
 ```
 
+## Codex Auto-Compaction
+
+This skill can scaffold project-local Codex compaction config, but it does not make a universal global policy by default.
+
+Enable it during setup:
+
+```bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" \
+  --project-root "$PWD" \
+  --enable-codex-auto-compact
+```
+
+The generated project config uses `model_auto_compact_token_limit`, which is an absolute token count. The setup script computes that count from `--codex-context-window` and `--codex-auto-compact-threshold-percent`; the percentage flag rejects values at or above 60.
+
+Known caveats:
+
+- Project `.codex/config.toml` and project-local hooks only load when Codex trusts the project.
+- Codex `PreCompact` hook matchers distinguish `manual` and `auto`, not main-agent versus subagent sessions.
+- The generated hook writes repo state to `.codex/handoffs/latest.md`; it cannot be assumed to have the full conversation transcript.
+- For strict main-agent-only behavior, prefer a personal Codex profile for main sessions plus custom subagent configs with different compaction settings.
+
 ## Operating Rules
 
 - Do not use GitHub Issues unless the user explicitly asks to switch this project away from Obsidian.
@@ -162,6 +199,7 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 - Do not overwrite substantive existing `CLAUDE.md` content without preserving it in `AGENTS.md` first.
 - Do not commit machine-specific vault paths. Keep the actual vault root in ignored `.env` as `PROJECT_WORKFLOW_OBSIDIAN_VAULT`; committed docs should describe derivation from `$HOME` and that env var.
 - Do not rely on process-level fallback env vars for required local config. If `.env` is missing or incomplete, stop and ask the user to populate it.
+- Keep Codex auto-compaction opt-in per project unless the user explicitly asks for a global profile or plugin. Do not write to `~/.codex` from project setup.
 - Do not reset an existing `docs/agents/ticket-sequence.json`.
 - Store execution plan Markdown files directly under `docs/plans/` with stable ticket-ID filenames.
 - Treat `docs/plans/*.md` as long-lived project history, not disposable scratch.

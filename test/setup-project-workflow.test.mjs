@@ -86,6 +86,204 @@ test("setup copies the bundled Kanban template into the target project", async (
   assert.match(board, /Create or update `AGENTS\.md`/);
 });
 
+test("setup leaves Codex auto-compaction disabled by default", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+
+  await assert.rejects(
+    fs.stat(path.join(projectRoot, ".codex", "config.toml")),
+    { code: "ENOENT" },
+  );
+
+  const workflow = JSON.parse(
+    await fs.readFile(path.join(projectRoot, "docs", "agents", "project-workflow.json"), "utf8"),
+  );
+  assert.equal(workflow.codexAutoCompact.enabled, false);
+  assert.equal(workflow.codexAutoCompact.thresholdPercent, 55);
+  assert.equal(workflow.codexAutoCompact.tokenLimit, 70400);
+
+  const doc = await fs.readFile(
+    path.join(projectRoot, "docs", "agents", "codex-auto-compact.md"),
+    "utf8",
+  );
+  assert.match(doc, /currently \*\*disabled\*\*/);
+
+  const agents = await fs.readFile(path.join(projectRoot, "AGENTS.md"), "utf8");
+  assert.doesNotMatch(agents, /Post-compaction recovery/);
+});
+
+test("setup can scaffold project-local Codex auto-compaction", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket-prefix",
+    "TMP",
+    "--enable-codex-auto-compact",
+    "--codex-context-window",
+    "100000",
+    "--codex-auto-compact-threshold-percent",
+    "59",
+  ]);
+
+  const workflow = JSON.parse(
+    await fs.readFile(path.join(projectRoot, "docs", "agents", "project-workflow.json"), "utf8"),
+  );
+  assert.equal(workflow.codexAutoCompact.enabled, true);
+  assert.equal(workflow.codexAutoCompact.contextWindowTokens, 100000);
+  assert.equal(workflow.codexAutoCompact.thresholdPercent, 59);
+  assert.equal(workflow.codexAutoCompact.tokenLimit, 59000);
+  assert.match(workflow.codexAutoCompact.caveat, /not main-agent vs subagent/);
+
+  const config = await fs.readFile(path.join(projectRoot, ".codex", "config.toml"), "utf8");
+  assert.match(config, /setup-project-workflow: codex-auto-compact begin/);
+  assert.match(config, /model_auto_compact_token_limit = 59000/);
+  assert.match(config, /experimental_compact_prompt_file = "compact-prompt\.md"/);
+  assert.match(config, /\[\[hooks\.PreCompact\]\]/);
+  assert.match(config, /matcher = "auto"/);
+  assert.match(config, /write_compaction_handoff\.mjs/);
+
+  const prompt = await fs.readFile(path.join(projectRoot, ".codex", "compact-prompt.md"), "utf8");
+  assert.match(prompt, /\.codex\/handoffs\/latest\.md/);
+
+  const agents = await fs.readFile(path.join(projectRoot, "AGENTS.md"), "utf8");
+  assert.match(agents, /Post-compaction recovery/);
+  assert.match(agents, /\.codex\/handoffs\/latest\.md/);
+
+  const doc = await fs.readFile(
+    path.join(projectRoot, "docs", "agents", "codex-auto-compact.md"),
+    "utf8",
+  );
+  assert.match(doc, /currently \*\*enabled\*\*/);
+  assert.match(doc, /requires the threshold to stay below 60%/);
+  assert.match(doc, /cannot be assumed to have a full conversation transcript/);
+
+  const gitignore = await fs.readFile(path.join(projectRoot, ".gitignore"), "utf8");
+  assert.match(gitignore, /\.codex\/handoffs\//);
+
+  const hookScript = path.join(projectRoot, ".codex", "hooks", "write_compaction_handoff.mjs");
+  const check = spawnSync(process.execPath, ["--check", hookScript], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr);
+
+  const hookRun = spawnSync(process.execPath, [hookScript], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  });
+  assert.equal(hookRun.status, 0, hookRun.stderr);
+
+  const handoff = await fs.readFile(
+    path.join(projectRoot, ".codex", "handoffs", "latest.md"),
+    "utf8",
+  );
+  assert.match(handoff, /Codex Auto-Compaction Handoff/);
+  assert.match(handoff, /Recovery Checklist/);
+  assert.match(handoff, /Git Status/);
+});
+
+test("setup rejects Codex auto-compaction thresholds at or above 60 percent", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  const result = runFail(setupScript, [
+    "--project-root",
+    projectRoot,
+    "--enable-codex-auto-compact",
+    "--codex-auto-compact-threshold-percent",
+    "60",
+  ]);
+
+  assert.match(result.stderr, /Expected a number greater than 0 and below 60/);
+});
+
+test("setup preserves and toggles Codex auto-compaction config on reruns", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket-prefix",
+    "TMP",
+    "--enable-codex-auto-compact",
+    "--codex-context-window",
+    "120000",
+    "--codex-auto-compact-threshold-percent",
+    "50",
+  ]);
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+
+  let workflow = JSON.parse(
+    await fs.readFile(path.join(projectRoot, "docs", "agents", "project-workflow.json"), "utf8"),
+  );
+  assert.equal(workflow.codexAutoCompact.enabled, true);
+  assert.equal(workflow.codexAutoCompact.contextWindowTokens, 120000);
+  assert.equal(workflow.codexAutoCompact.thresholdPercent, 50);
+  assert.equal(workflow.codexAutoCompact.tokenLimit, 60000);
+
+  runOk(setupScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket-prefix",
+    "TMP",
+    "--disable-codex-auto-compact",
+  ]);
+
+  workflow = JSON.parse(
+    await fs.readFile(path.join(projectRoot, "docs", "agents", "project-workflow.json"), "utf8"),
+  );
+  assert.equal(workflow.codexAutoCompact.enabled, false);
+  assert.equal(workflow.codexAutoCompact.contextWindowTokens, 120000);
+  assert.equal(workflow.codexAutoCompact.thresholdPercent, 50);
+
+  const config = await fs.readFile(path.join(projectRoot, ".codex", "config.toml"), "utf8");
+  assert.doesNotMatch(config, /model_auto_compact_token_limit/);
+  assert.doesNotMatch(config, /\[\[hooks\.PreCompact\]\]/);
+
+  const doc = await fs.readFile(
+    path.join(projectRoot, "docs", "agents", "codex-auto-compact.md"),
+    "utf8",
+  );
+  assert.match(doc, /currently \*\*disabled\*\*/);
+
+  const agents = await fs.readFile(path.join(projectRoot, "AGENTS.md"), "utf8");
+  assert.doesNotMatch(agents, /Post-compaction recovery/);
+});
+
 test("new ticket writes specific checklist fields to card and plan", async (t) => {
   const workspace = await tempWorkspace(t);
   const projectRoot = path.join(workspace, "example-project");

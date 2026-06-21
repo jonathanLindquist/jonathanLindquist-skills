@@ -8,7 +8,7 @@ This repo is a work in progress. Test workflow changes only against temporary pr
 
 | Skill | Purpose |
 | --- | --- |
-| `setup-project-workflow` | Bootstrap repo-local agent docs, Obsidian Kanban ticket tracking, stable plan files, ticket numbering, and ticket status utilities. |
+| `setup-project-workflow` | Bootstrap repo-local agent docs, Obsidian Kanban ticket tracking, stable plan files, ticket numbering, ticket status utilities, and optional Codex auto-compaction scaffolding. |
 
 ## Install
 
@@ -109,6 +109,17 @@ Optional setup argument:
 
 Use this when the derived ticket prefix is not what you want.
 
+Optional Codex auto-compaction arguments:
+
+```bash
+--enable-codex-auto-compact
+--disable-codex-auto-compact
+--codex-context-window 128000
+--codex-auto-compact-threshold-percent 55
+```
+
+Use these when a project should opt into project-local Codex compaction before the context window is heavily saturated. The threshold percent must stay below `60`; the setup script converts it to Codex's absolute `model_auto_compact_token_limit`.
+
 ## Using `setup-project-workflow`
 
 After installing, run it from the project you want to bootstrap:
@@ -135,8 +146,18 @@ The skill creates or updates:
 - `docs/agents/*`
 - `docs/plans/*`
 - `docs/agents/kanban-template.md`, copied from the skill's bundled template asset so the project carries its own Kanban template
+- `docs/agents/codex-auto-compact.md`, documenting current Codex auto-compaction state and caveats
 - an Obsidian Kanban board under the configured vault
 - Obsidian Kanban tag color settings where available
+
+When `--enable-codex-auto-compact` is passed, the skill also creates or updates:
+
+- `.codex/config.toml`, with a managed setup block for `model_auto_compact_token_limit`, `experimental_compact_prompt_file`, and a `PreCompact` hook matching `auto`
+- `.codex/compact-prompt.md`
+- `.codex/hooks/write_compaction_handoff.mjs`
+- `.gitignore`, ensuring `.codex/handoffs/` is ignored
+
+Limitations: project `.codex/config.toml` loads only for trusted projects, and current Codex `PreCompact` matchers distinguish `manual` versus `auto`, not main-agent versus subagent sessions. For strict main-agent-only behavior, use a personal Codex profile for main sessions and separate custom subagent configs.
 
 Create a new ticket:
 

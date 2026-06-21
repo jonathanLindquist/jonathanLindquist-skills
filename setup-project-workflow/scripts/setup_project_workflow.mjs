@@ -14,6 +14,18 @@ const bootstrapTicketNumber = 1;
 const bootstrapTitle = "Initialize Project Workflow";
 const bootstrapTriageTag = "ready-for-agent";
 const bootstrapTopicTags = ["obsidian", "kanban"];
+const codexAutoCompactDefaults = {
+  contextWindowTokens: 128000,
+  thresholdPercent: 55,
+};
+const codexAutoCompactPaths = {
+  config: ".codex/config.toml",
+  prompt: ".codex/compact-prompt.md",
+  hook: ".codex/hooks/write_compaction_handoff.mjs",
+  latestHandoff: ".codex/handoffs/latest.md",
+};
+const codexAutoCompactBlockStart = "# setup-project-workflow: codex-auto-compact begin";
+const codexAutoCompactBlockEnd = "# setup-project-workflow: codex-auto-compact end";
 
 const triageTags = [
   {
@@ -75,6 +87,14 @@ Options:
   --ticket-prefix <value>  Ticket prefix. Defaults to initials from the project name.
   --dry-run                Print planned writes without changing files.
   --force                  Overwrite generated docs and non-wrapper CLAUDE.md.
+  --enable-codex-auto-compact
+                           Scaffold project-local Codex config for earlier auto-compaction.
+  --disable-codex-auto-compact
+                           Remove the managed project-local Codex auto-compaction config block.
+  --codex-context-window <tokens>
+                           Context window used to compute the compact token limit. Defaults to 128000.
+  --codex-auto-compact-threshold-percent <percent>
+                           Percentage of context to compact at. Must be below 60. Defaults to 55.
   --help                   Show this help.
 `;
 
@@ -84,6 +104,9 @@ function parseArgs(argv) {
     ticketPrefix: null,
     dryRun: false,
     force: false,
+    codexAutoCompactEnabled: null,
+    codexContextWindowTokens: null,
+    codexAutoCompactThresholdPercent: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -97,6 +120,14 @@ function parseArgs(argv) {
       options.dryRun = true;
     } else if (arg === "--force") {
       options.force = true;
+    } else if (arg === "--enable-codex-auto-compact") {
+      options.codexAutoCompactEnabled = true;
+    } else if (arg === "--disable-codex-auto-compact") {
+      options.codexAutoCompactEnabled = false;
+    } else if (arg === "--codex-context-window") {
+      options.codexContextWindowTokens = parsePositiveInteger(argv[++index], arg);
+    } else if (arg === "--codex-auto-compact-threshold-percent") {
+      options.codexAutoCompactThresholdPercent = parseCompactThresholdPercent(argv[++index], arg);
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage);
       process.exit(0);
@@ -108,6 +139,22 @@ function parseArgs(argv) {
   options.projectRoot = path.resolve(expandHome(options.projectRoot));
 
   return options;
+}
+
+function parsePositiveInteger(value, flag) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${flag} ${value}. Expected a positive integer.`);
+  }
+  return parsed;
+}
+
+function parseCompactThresholdPercent(value, flag) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 60) {
+    throw new Error(`Invalid ${flag} ${value}. Expected a number greater than 0 and below 60.`);
+  }
+  return parsed;
 }
 
 function expandHome(value) {
@@ -345,6 +392,20 @@ function updateGitignore(projectRoot, options, actions) {
     options,
     actions,
   );
+}
+
+function updateGitignorePattern(projectRoot, pattern, options, actions) {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const current = readFileIfExists(gitignorePath);
+
+  if (current !== null && current.split(/\r?\n/).some((line) => line.trim() === pattern)) {
+    actions.push(`unchanged ${displayPath(gitignorePath)}`);
+    return;
+  }
+
+  const base = current === null ? "" : current.trimEnd();
+  const prefix = base ? `${base}\n\n` : "";
+  writeIfChanged(gitignorePath, `${prefix}# Codex runtime handoffs\n${pattern}\n`, options, actions);
 }
 
 function updateLocalConfigFiles(projectRoot, options, actions) {
@@ -686,6 +747,15 @@ Use the default five-role triage vocabulary as Obsidian tags configured with Kan
 ### Domain docs
 
 This is a single-context repo: read root \`CONTEXT.md\` and \`docs/adr/\` if they exist. See \`docs/agents/domain.md\`.
+${context.codexAutoCompact.enabled ? codexAutoCompactAgentBlock() : ""}
+`;
+}
+
+function codexAutoCompactAgentBlock() {
+  return `
+### Post-compaction recovery
+
+This project opts into project-local Codex auto-compaction scaffolding. If the conversation was compacted, first read \`${codexAutoCompactPaths.latestHandoff}\` if it exists, then continue. Use it to restore the current goal, decisions, open TODOs, verification state, changed files, and blockers before doing new work. See \`docs/agents/codex-auto-compact.md\`.
 `;
 }
 
@@ -737,6 +807,7 @@ function projectWorkflowConfig(context) {
     kanbanTemplatePath: repoKanbanTemplatePath,
     planDir: "docs/plans",
     ticketSequencePath: "docs/agents/ticket-sequence.json",
+    codexAutoCompact: context.codexAutoCompact,
   };
 }
 
@@ -745,6 +816,57 @@ function ticketSequence(context, next = 2) {
     prefix: context.ticketPrefix,
     next,
     width: ticketWidth,
+  };
+}
+
+function existingProjectWorkflowConfig(projectRoot) {
+  const workflowPath = path.join(projectRoot, "docs", "agents", "project-workflow.json");
+  const content = readFileIfExists(workflowPath);
+  if (content === null) return {};
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
+
+function resolveCodexAutoCompactConfig(projectRoot, options) {
+  const existing = existingProjectWorkflowConfig(projectRoot).codexAutoCompact ?? {};
+  const enabled =
+    options.codexAutoCompactEnabled ?? Boolean(existing.enabled);
+  const contextWindowTokens =
+    options.codexContextWindowTokens ??
+    existing.contextWindowTokens ??
+    codexAutoCompactDefaults.contextWindowTokens;
+  const thresholdPercent =
+    options.codexAutoCompactThresholdPercent ??
+    existing.thresholdPercent ??
+    codexAutoCompactDefaults.thresholdPercent;
+
+  if (!Number.isInteger(contextWindowTokens) || contextWindowTokens <= 0) {
+    throw new Error(
+      `Invalid existing codexAutoCompact.contextWindowTokens ${contextWindowTokens}. Expected a positive integer.`,
+    );
+  }
+
+  if (!Number.isFinite(thresholdPercent) || thresholdPercent <= 0 || thresholdPercent >= 60) {
+    throw new Error(
+      `Invalid existing codexAutoCompact.thresholdPercent ${thresholdPercent}. Expected a number greater than 0 and below 60.`,
+    );
+  }
+
+  return {
+    enabled,
+    contextWindowTokens,
+    thresholdPercent,
+    tokenLimit: Math.floor((contextWindowTokens * thresholdPercent) / 100),
+    configPath: codexAutoCompactPaths.config,
+    compactPromptPath: codexAutoCompactPaths.prompt,
+    handoffHookPath: codexAutoCompactPaths.hook,
+    latestHandoffPath: codexAutoCompactPaths.latestHandoff,
+    caveat:
+      "Codex PreCompact matchers distinguish manual vs auto compaction, not main-agent vs subagent sessions.",
   };
 }
 
@@ -1020,13 +1142,297 @@ If output contradicts an existing ADR, surface it explicitly instead of silently
 `;
 }
 
+function codexAutoCompactDoc(context) {
+  const state = context.codexAutoCompact.enabled ? "enabled" : "disabled";
+
+  return `# Codex Auto-Compaction
+
+Project-local Codex auto-compaction setup is currently **${state}**.
+
+## Current Config
+
+- Enabled: \`${context.codexAutoCompact.enabled}\`
+- Assumed context window: \`${context.codexAutoCompact.contextWindowTokens}\` tokens
+- Auto-compact threshold: \`${context.codexAutoCompact.thresholdPercent}%\`
+- Codex token limit: \`${context.codexAutoCompact.tokenLimit}\` tokens
+- Project config: \`${codexAutoCompactPaths.config}\`
+- Compact prompt: \`${codexAutoCompactPaths.prompt}\`
+- Pre-compact hook: \`${codexAutoCompactPaths.hook}\`
+- Latest handoff: \`${codexAutoCompactPaths.latestHandoff}\`
+
+Codex currently accepts \`model_auto_compact_token_limit\` as an absolute token count, not a percentage. This setup computes that token count from the context window and threshold percentage, and requires the threshold to stay below 60%.
+
+## Project-local Setup
+
+Enable the scaffold from the project root:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" \\
+  --project-root "$PWD" \\
+  --enable-codex-auto-compact
+\`\`\`
+
+Change the assumed context window or threshold:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" \\
+  --project-root "$PWD" \\
+  --enable-codex-auto-compact \\
+  --codex-context-window 128000 \\
+  --codex-auto-compact-threshold-percent 55
+\`\`\`
+
+Disable the managed project config block:
+
+\`\`\`bash
+node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" \\
+  --project-root "$PWD" \\
+  --disable-codex-auto-compact
+\`\`\`
+
+Project-local \`.codex/config.toml\` only loads when Codex trusts the project.
+
+## What The Scaffold Does
+
+When enabled, setup writes a managed block to \`${codexAutoCompactPaths.config}\` with:
+
+- \`model_auto_compact_token_limit\`, set to the computed token limit
+- \`experimental_compact_prompt_file\`, pointed at \`${codexAutoCompactPaths.prompt}\`
+- a \`PreCompact\` hook matching \`auto\`, pointed at \`${codexAutoCompactPaths.hook}\`
+
+The hook writes a lightweight repo-state handoff before auto-compaction. After compaction, the compact prompt tells the agent to read \`${codexAutoCompactPaths.latestHandoff}\` before continuing.
+
+## Known Limitations
+
+- Codex \`PreCompact\` matchers can distinguish \`manual\` and \`auto\`, but not main-agent versus subagent sessions.
+- The generated hook records repo state; it cannot be assumed to have a full conversation transcript.
+- If strict main-agent-only behavior is required, use a personal Codex profile for main sessions and custom subagent configs with different compaction settings, then validate any runtime metadata guards before relying on them.
+
+## Personal Main-agent Profile
+
+For a personal main-agent setup, keep the low threshold in a user-level profile instead of global \`~/.codex/config.toml\`:
+
+\`\`\`toml
+# ~/.codex/main-handoff.config.toml
+model_auto_compact_token_limit = ${context.codexAutoCompact.tokenLimit}
+experimental_compact_prompt_file = "/absolute/path/to/main-compact-prompt.md"
+\`\`\`
+
+Start main sessions with:
+
+\`\`\`bash
+codex --profile main-handoff
+\`\`\`
+`;
+}
+
+function codexCompactPrompt() {
+  return `# Post-compaction Recovery
+
+Before doing any new work after compaction:
+
+1. Read \`${codexAutoCompactPaths.latestHandoff}\` if it exists.
+2. Restore the current goal, decisions, open TODOs, verification state, changed files, and blockers.
+3. If the handoff is missing or stale, say so and reconstruct state from the repository before continuing.
+`;
+}
+
+function codexCompactionHookScript() {
+  return `#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
+function run(command, args, cwd) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 10000,
+  });
+
+  if (result.error) {
+    return { ok: false, output: result.error.message };
+  }
+
+  const output = [result.stdout, result.stderr].filter(Boolean).join("\\n").trim();
+  return { ok: result.status === 0, output };
+}
+
+function fenced(value) {
+  return \`\\\`\\\`\\n\${value || "(none)"}\\n\\\`\\\`\`;
+}
+
+function listRecentPlans(projectRoot) {
+  const planDir = path.join(projectRoot, "docs", "plans");
+  if (!fs.existsSync(planDir)) return [];
+
+  return fs
+    .readdirSync(planDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => {
+      const filePath = path.join(planDir, entry.name);
+      return {
+        name: path.relative(projectRoot, filePath),
+        mtimeMs: fs.statSync(filePath).mtimeMs,
+      };
+    })
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)
+    .slice(0, 10)
+    .map((entry) => \`- \${entry.name}\`);
+}
+
+const startedCwd = process.cwd();
+const gitRoot = run("git", ["rev-parse", "--show-toplevel"], startedCwd);
+const projectRoot = gitRoot.ok && gitRoot.output ? gitRoot.output.split(/\\r?\\n/)[0] : startedCwd;
+const handoffDir = path.join(projectRoot, ".codex", "handoffs");
+const generatedAt = new Date().toISOString();
+const stamp = generatedAt.replace(/[:.]/g, "-");
+const latestPath = path.join(handoffDir, "latest.md");
+const stampedPath = path.join(handoffDir, \`\${stamp}.md\`);
+const status = run("git", ["status", "--short", "--branch"], projectRoot);
+const diffStat = run("git", ["diff", "--stat"], projectRoot);
+const changedFiles = run("git", ["diff", "--name-only"], projectRoot);
+const recentPlans = listRecentPlans(projectRoot);
+
+const markdown = \`# Codex Auto-Compaction Handoff
+
+- Generated: \${generatedAt}
+- Trigger: PreCompact auto hook
+- Project root: \${projectRoot}
+- Session cwd: \${startedCwd}
+
+## Recovery Checklist
+
+- [ ] Restore the current user goal.
+- [ ] Restore important decisions and constraints.
+- [ ] Restore open TODOs and blockers.
+- [ ] Restore verification state and commands still needed.
+- [ ] Inspect changed files before continuing implementation.
+
+## Repo Snapshot
+
+### Git Status
+
+\${fenced(status.ok ? status.output : \`Git status unavailable: \${status.output}\`)}
+
+### Diff Stat
+
+\${fenced(diffStat.ok ? diffStat.output : \`Git diff stat unavailable: \${diffStat.output}\`)}
+
+### Changed Files
+
+\${fenced(changedFiles.ok ? changedFiles.output : \`Changed files unavailable: \${changedFiles.output}\`)}
+
+### Recent Plan Files
+
+\${recentPlans.length > 0 ? recentPlans.join("\\n") : "- No docs/plans/*.md files found."}
+
+## Caveat
+
+This hook records repository state only. It does not guarantee access to the full conversation transcript, so the agent should combine this handoff with the compacted conversation summary.
+\`;
+
+fs.mkdirSync(handoffDir, { recursive: true });
+fs.writeFileSync(stampedPath, markdown);
+fs.writeFileSync(latestPath, markdown);
+console.log(\`Wrote Codex handoff: \${path.relative(projectRoot, latestPath)}\`);
+`;
+}
+
+function codexAutoCompactToml(context) {
+  return `${codexAutoCompactBlockStart}
+model_auto_compact_token_limit = ${context.codexAutoCompact.tokenLimit}
+experimental_compact_prompt_file = "compact-prompt.md"
+
+[[hooks.PreCompact]]
+matcher = "auto"
+
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = 'node "$(git rev-parse --show-toplevel)/${codexAutoCompactPaths.hook}"'
+timeout = 60
+statusMessage = "Writing Codex handoff before auto-compaction"
+${codexAutoCompactBlockEnd}`;
+}
+
+function removeCodexAutoCompactBlock(content) {
+  const start = content.indexOf(codexAutoCompactBlockStart);
+  if (start === -1) return content;
+
+  const end = content.indexOf(codexAutoCompactBlockEnd, start);
+  if (end === -1) return content;
+
+  const before = content.slice(0, start).trimEnd();
+  const after = content.slice(end + codexAutoCompactBlockEnd.length).replace(/^\s+/, "");
+  if (!before) return after ? `${after.trimStart()}` : "";
+  return after ? `${before}\n\n${after}` : `${before}\n`;
+}
+
+function hasUnmanagedAutoCompactKeys(content) {
+  const unmanaged = removeCodexAutoCompactBlock(content);
+  return /^\s*(model_auto_compact_token_limit|experimental_compact_prompt_file)\s*=/m.test(unmanaged);
+}
+
+function updateCodexConfig(context, options, actions) {
+  const configPath = path.join(context.projectRoot, codexAutoCompactPaths.config);
+  const current = readFileIfExists(configPath) ?? "";
+  const withoutManagedBlock = removeCodexAutoCompactBlock(current);
+
+  if (!context.codexAutoCompact.enabled) {
+    if (current === "") {
+      actions.push(`skip ${displayPath(configPath)}; Codex auto-compaction disabled`);
+      return;
+    }
+
+    writeIfChanged(configPath, withoutManagedBlock, options, actions);
+    return;
+  }
+
+  if (hasUnmanagedAutoCompactKeys(current)) {
+    actions.push(
+      `skip ${displayPath(configPath)}; existing unmanaged Codex compaction keys need manual merge`,
+    );
+    return;
+  }
+
+  const base = withoutManagedBlock.trimEnd();
+  const content = `${base ? `${base}\n\n` : ""}${codexAutoCompactToml(context)}\n`;
+  writeIfChanged(configPath, content, options, actions);
+}
+
+function updateCodexAutoCompactArtifacts(context, options, actions) {
+  updateCodexConfig(context, options, actions);
+
+  if (!context.codexAutoCompact.enabled) return;
+
+  writeGeneratedFile(
+    path.join(context.projectRoot, codexAutoCompactPaths.prompt),
+    codexCompactPrompt(),
+    options,
+    actions,
+  );
+  writeGeneratedFile(
+    path.join(context.projectRoot, codexAutoCompactPaths.hook),
+    codexCompactionHookScript(),
+    options,
+    actions,
+  );
+  updateGitignorePattern(context.projectRoot, ".codex/handoffs/", options, actions);
+}
+
 function updateDocs(context, options, actions) {
   const docsDir = path.join(context.projectRoot, "docs", "agents");
   writeGeneratedFile(path.join(docsDir, "issue-tracker.md"), issueTrackerDoc(context), options, actions);
   writeGeneratedFile(path.join(docsDir, "ticket-workflow.md"), ticketWorkflowDoc(context), options, actions);
   writeGeneratedFile(path.join(docsDir, "triage-labels.md"), triageLabelsDoc(), options, actions);
   writeGeneratedFile(path.join(docsDir, "domain.md"), domainDoc(), options, actions);
-  writeGeneratedFile(
+  writeIfChanged(
+    path.join(docsDir, "codex-auto-compact.md"),
+    codexAutoCompactDoc(context),
+    options,
+    actions,
+  );
+  writeIfChanged(
     path.join(docsDir, "project-workflow.json"),
     `${JSON.stringify(projectWorkflowConfig(context), null, 2)}\n`,
     options,
@@ -1076,6 +1482,7 @@ function run() {
   const boardPath = path.join(vaultPath, relativeProjectPath, `${projectTitle} Kanban.md`);
   const ticketPrefix = options.ticketPrefix || defaultTicketPrefix(projectName);
   const today = new Date().toISOString().slice(0, 10);
+  const codexAutoCompact = resolveCodexAutoCompactConfig(options.projectRoot, options);
   const context = {
     projectRoot: options.projectRoot,
     projectName,
@@ -1086,12 +1493,14 @@ function run() {
     vault: vaultPath,
     boardPath,
     today,
+    codexAutoCompact,
   };
 
   const templateInfo = updateRepoKanbanTemplate(options.projectRoot, options, actions);
   updatePluginSettings(vaultPath, options, actions);
   updateBoard(context, templateInfo, options, actions);
   updatePlanArtifacts(context, options, actions);
+  updateCodexAutoCompactArtifacts(context, options, actions);
   updateAgentsFile(context, options, actions);
   updateClaudeFile(context, options, actions);
   updateDocs(context, options, actions);
