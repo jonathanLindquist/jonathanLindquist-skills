@@ -147,6 +147,108 @@ test("setup can be rerun on an initialized project without resetting ticket stat
   assert.equal([...board.matchAll(/TMP-0001 Initialize Project Workflow/g)].length, 1);
 });
 
+test("setup rerun refreshes generated workflow docs while preserving tickets and plans", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Preserve referenced plan",
+    "--description",
+    "Verify setup upgrades workflow files without losing project history.",
+    "--todo",
+    "Keep the existing ticket card.",
+    "--acceptance",
+    "The linked plan survives setup rerun.",
+    "--verification",
+    "Workflow verification passes after rerun.",
+  ]);
+
+  const planPath = path.join(
+    projectRoot,
+    "docs",
+    "plans",
+    "TMP-0002-preserve-referenced-plan.md",
+  );
+  await fs.appendFile(planPath, "\n## Project Notes\n\nKeep this project-specific note.\n");
+
+  const docsDir = path.join(projectRoot, "docs", "agents");
+  await fs.writeFile(path.join(docsDir, "issue-tracker.md"), "stale issue tracker\n");
+  await fs.writeFile(path.join(docsDir, "ticket-workflow.md"), "stale ticket workflow\n");
+  await fs.writeFile(path.join(docsDir, "triage-labels.md"), "stale triage labels\n");
+  await fs.writeFile(path.join(docsDir, "domain.md"), "stale domain doc\n");
+  await fs.writeFile(path.join(docsDir, "kanban-template.md"), "stale template\n");
+
+  const rerun = runOk(setupScript, ["--project-root", projectRoot]);
+  assert.match(rerun.stdout, /Project workflow verification passed:/);
+
+  const issueTracker = await fs.readFile(path.join(docsDir, "issue-tracker.md"), "utf8");
+  assert.notEqual(issueTracker, "stale issue tracker\n");
+  assert.match(issueTracker, /Verification command: `verify_project_workflow\.mjs`/);
+
+  const ticketWorkflow = await fs.readFile(path.join(docsDir, "ticket-workflow.md"), "utf8");
+  assert.notEqual(ticketWorkflow, "stale ticket workflow\n");
+  assert.match(ticketWorkflow, /Setup verification is performed by `verify_project_workflow\.mjs`/);
+
+  const template = await fs.readFile(path.join(docsDir, "kanban-template.md"), "utf8");
+  assert.notEqual(template, "stale template\n");
+  assert.match(template, /ABC-0001 Ticket title/);
+
+  const preservedPlan = await fs.readFile(planPath, "utf8");
+  assert.match(preservedPlan, /Keep this project-specific note\./);
+
+  const sequence = JSON.parse(
+    await fs.readFile(path.join(docsDir, "ticket-sequence.json"), "utf8"),
+  );
+  assert.equal(sequence.next, 3);
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected a Kanban board under the vault");
+  const board = await fs.readFile(boardPath, "utf8");
+  assert.match(board, /TMP-0002 Preserve referenced plan/);
+  assert.match(board, /Plan: docs\/plans\/TMP-0002-preserve-referenced-plan\.md/);
+});
+
+test("verification fails when a board card references a missing plan", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Missing plan ticket",
+  ]);
+  await fs.rm(
+    path.join(projectRoot, "docs", "plans", "TMP-0002-missing-plan-ticket.md"),
+  );
+
+  const result = runFail(verifyScript, ["--project-root", projectRoot]);
+  assert.match(result.stderr, /Project workflow verification failed:/);
+  assert.match(
+    result.stderr,
+    /board Plan reference is missing: docs\/plans\/TMP-0002-missing-plan-ticket\.md/,
+  );
+});
+
 test("setup rejects reruns with a different ticket prefix", async (t) => {
   const workspace = await tempWorkspace(t);
   const projectRoot = path.join(workspace, "example-project");

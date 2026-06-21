@@ -76,7 +76,7 @@ Options:
   --project-root <path>    Repo/project root to set up. Defaults to cwd.
   --ticket-prefix <value>  Ticket prefix. Defaults to initials from the project name.
   --dry-run                Print planned writes without changing files.
-  --force                  Overwrite generated docs and non-wrapper CLAUDE.md.
+  --force                  Overwrite a non-wrapper CLAUDE.md after preserving its content.
   --help                   Show this help.
 
 Non-dry-run setup always runs verify_project_workflow.mjs before exiting.
@@ -283,15 +283,6 @@ function writeIfChanged(filePath, content, options, actions) {
 }
 
 function writeGeneratedFile(filePath, content, options, actions) {
-  const current = readFileIfExists(filePath);
-
-  if (current !== null && current !== content && !options.force) {
-    actions.push(
-      `skip existing ${displayPath(filePath)}; rerun with --force after preserving project-specific edits`,
-    );
-    return "skipped";
-  }
-
   return writeIfChanged(filePath, content, options, actions);
 }
 
@@ -497,22 +488,9 @@ function templateInfo(markdown) {
 
 function updateRepoKanbanTemplate(projectRoot, options, actions) {
   const templatePath = path.join(projectRoot, repoKanbanTemplatePath);
-  const current = readFileIfExists(templatePath);
   const template = bundledKanbanTemplate();
-
-  if (current === null) {
-    writeIfChanged(templatePath, template, options, actions);
-    return templateInfo(template);
-  }
-
-  if (options.force) {
-    writeIfChanged(templatePath, template, options, actions);
-    return templateInfo(template);
-  }
-
-  const updated = updateMarkdownSettings(current);
-  writeIfChanged(templatePath, updated, options, actions);
-  return templateInfo(updated);
+  writeGeneratedFile(templatePath, template, options, actions);
+  return templateInfo(template);
 }
 
 function checklist(items, { checked = false, indent = "" } = {}) {
@@ -707,7 +685,7 @@ After setup or any rerun of setup, the setup command must finish by running:
 node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
 \`\`\`
 
-Run the same command manually after resolving any skipped generated-file refresh or protected-file merge.
+Run the same command manually after resolving any protected-file merge.
 
 ### Execution plans
 
@@ -872,7 +850,7 @@ External PRs are not currently treated as a request surface for this project. Tr
 
 ## Workflow Verification
 
-Run this command after setup, after rerunning setup, and after resolving any generated-file skips:
+Run this command after setup, after rerunning setup, and after resolving any protected-file merge:
 
 \`\`\`bash
 node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
@@ -1095,7 +1073,7 @@ function updatePlanArtifacts(context, options, actions) {
   const planDir = path.join(context.projectRoot, "docs", "plans");
   ensureDir(planDir, options, actions);
 
-  writeGeneratedFile(
+  writeStateFileIfMissing(
     path.join(planDir, ticketPlanFileName(context.bootstrapTicketId, bootstrapTitle)),
     bootstrapPlanMarkdown(context),
     options,

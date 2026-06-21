@@ -132,9 +132,10 @@ The skill creates or updates:
 - `CLAUDE.md`, as a thin pointer back to `AGENTS.md`
 - `.env.example`
 - `.gitignore`, ensuring `.env` is ignored
-- `docs/agents/*`
-- `docs/plans/*`
-- `docs/agents/kanban-template.md`, copied from the skill's bundled template asset so the project carries its own Kanban template
+- generated workflow docs under `docs/agents/`
+- `docs/agents/ticket-sequence.json`, created once and preserved on reruns
+- bootstrap and ticket plans under `docs/plans/`, created when missing and preserved on reruns
+- `docs/agents/kanban-template.md`, refreshed from the skill's bundled template asset so the project carries its own Kanban template
 - an Obsidian Kanban board under the configured vault
 - Obsidian Kanban tag color settings where available
 
@@ -145,7 +146,7 @@ node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflo
   --project-root "$PWD"
 ```
 
-Run the same setup command again when this skill is enhanced and a project was already initialized. Reruns preserve `docs/agents/ticket-sequence.json`, reuse the existing ticket prefix, keep current board cards, and refresh generated workflow config. If generated docs or the repo-local Kanban template need a forced refresh, preserve any project-specific edits first and rerun setup with `--force`; setup will run verification again at the end.
+Run the same setup command again when this skill is enhanced and a project was already initialized. Reruns preserve `docs/agents/ticket-sequence.json`, reuse the existing ticket prefix, keep current board cards and linked plans, and refresh generated workflow docs, workflow config, and the repo-local Kanban template. Keep project-specific implementation history in Kanban cards, linked `docs/plans/*.md` files, or the non-managed portions of `AGENTS.md`; generated workflow docs are tool-owned and are rewritten by setup.
 
 Create a new ticket:
 

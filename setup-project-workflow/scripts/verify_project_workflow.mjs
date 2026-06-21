@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const bundledKanbanTemplatePath = path.resolve(scriptDir, "..", "assets", "kanban-template.md");
 const homeDir = os.homedir();
 const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
 const repoKanbanTemplatePath = "docs/agents/kanban-template.md";
+const expectedVerifyCommand =
+  'node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"';
 const requiredLanes = ["Backlog", "In Progress", "Completed"];
 const requiredTriageTags = [
   "needs-triage",
@@ -21,6 +26,40 @@ const requiredAgentDocs = [
   "docs/agents/ticket-sequence.json",
   "docs/agents/ticket-workflow.md",
   "docs/agents/triage-labels.md",
+];
+const requiredGeneratedDocAnchors = [
+  {
+    relativePath: "docs/agents/issue-tracker.md",
+    anchors: [
+      "Verification command: `verify_project_workflow.mjs`",
+      "## Workflow Verification",
+      "docs/agents/kanban-template.md",
+    ],
+  },
+  {
+    relativePath: "docs/agents/ticket-workflow.md",
+    anchors: [
+      "Setup verification is performed by `verify_project_workflow.mjs`",
+      "## Completing Tickets",
+      "docs/plans/",
+    ],
+  },
+  {
+    relativePath: "docs/agents/triage-labels.md",
+    anchors: [
+      "| `ready-for-agent` | `#ready-for-agent` |",
+      "## Kanban Tag Lines",
+      "#wontfix",
+    ],
+  },
+  {
+    relativePath: "docs/agents/domain.md",
+    anchors: [
+      "## Before Exploring, Read These",
+      "## Flag ADR Conflicts",
+      "docs/adr/",
+    ],
+  },
 ];
 
 const usage = `Usage:
@@ -153,6 +192,11 @@ function resolveRepoPath(projectRoot, value, fieldName, errors) {
   return resolved;
 }
 
+function isInsideOrEqual(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function gitignoreIgnoresEnv(markdown) {
   return markdown.split(/\r?\n/).some((line) => {
     const trimmed = line.trim();
@@ -220,6 +264,24 @@ function laneForTicket(markdown, ticketId) {
   return null;
 }
 
+function normalizePlanReference(value) {
+  let reference = value.trim();
+  const markdownLink = reference.match(/^\[[^\]]+\]\(([^)]+)\)$/);
+  if (markdownLink) reference = markdownLink[1].trim();
+
+  if (reference.startsWith("`") && reference.endsWith("`")) {
+    reference = reference.slice(1, -1).trim();
+  }
+
+  return reference;
+}
+
+function planReferences(markdown) {
+  return [...markdown.matchAll(/^\s*-\s+Plan:\s+(.+?)\s*$/gm)].map((match) =>
+    normalizePlanReference(match[1]),
+  );
+}
+
 function countAgentSkillsSections(markdown) {
   return [...markdown.matchAll(/^## Agent skills\s*$/gm)].length;
 }
@@ -231,6 +293,65 @@ function expect(condition, passMessage, failMessage, errors, checks) {
   }
 
   errors.push(failMessage);
+}
+
+function verifyGeneratedDocs(projectRoot, errors, checks) {
+  for (const doc of requiredGeneratedDocAnchors) {
+    const filePath = path.join(projectRoot, doc.relativePath);
+    const markdown = readFileIfExists(filePath);
+    if (markdown === null) continue;
+
+    for (const anchor of doc.anchors) {
+      expect(
+        markdown.includes(anchor),
+        `${doc.relativePath} contains current workflow contract text`,
+        `${doc.relativePath} is stale or missing expected text: ${anchor}`,
+        errors,
+        checks,
+      );
+    }
+  }
+}
+
+function verifyBoardPlanReferences(projectRoot, planDir, board, errors, checks) {
+  const references = planReferences(board);
+  expect(
+    references.length > 0,
+    "board cards include plan references",
+    "board has no Plan references",
+    errors,
+    checks,
+  );
+
+  for (const reference of references) {
+    if (!reference) {
+      errors.push("board contains an empty Plan reference");
+      continue;
+    }
+
+    const expanded = expandHome(reference);
+    const resolved = path.isAbsolute(expanded)
+      ? path.resolve(expanded)
+      : path.resolve(projectRoot, expanded);
+
+    if (!isInsideOrEqual(projectRoot, resolved)) {
+      errors.push(`board Plan reference must stay inside the project root: ${reference}`);
+      continue;
+    }
+
+    if (planDir !== null && !isInsideOrEqual(planDir, resolved)) {
+      errors.push(`board Plan reference must live under docs/plans: ${reference}`);
+      continue;
+    }
+
+    expect(
+      fs.existsSync(resolved),
+      `board Plan reference exists: ${reference}`,
+      `board Plan reference is missing: ${reference}`,
+      errors,
+      checks,
+    );
+  }
 }
 
 function verifyProject(options) {
@@ -331,6 +452,13 @@ function verifyProject(options) {
       errors,
       checks,
     );
+    expect(
+      workflow.verifyCommand === expectedVerifyCommand,
+      "project-workflow.json exposes the setup verifier command",
+      "project-workflow.json verifyCommand is missing or stale",
+      errors,
+      checks,
+    );
   }
 
   for (const relativePath of requiredAgentDocs) {
@@ -343,6 +471,7 @@ function verifyProject(options) {
       checks,
     );
   }
+  verifyGeneratedDocs(projectRoot, errors, checks);
 
   expect(
     planDir !== null && fs.existsSync(planDir) && fs.statSync(planDir).isDirectory(),
@@ -416,6 +545,14 @@ function verifyProject(options) {
     checks,
   );
   if (template) {
+    const bundledTemplate = readFileIfExists(bundledKanbanTemplatePath);
+    expect(
+      bundledTemplate !== null && template === bundledTemplate,
+      "repo-local Kanban template matches the bundled workflow template",
+      "repo-local Kanban template is stale; rerun setup_project_workflow.mjs to refresh it",
+      errors,
+      checks,
+    );
     verifyTagColors(
       extractSettings(template, "repo-local Kanban template", errors),
       "repo-local Kanban template",
@@ -458,6 +595,7 @@ function verifyProject(options) {
     }
 
     verifyTagColors(extractSettings(board, "board", errors), "board", errors, checks);
+    verifyBoardPlanReferences(projectRoot, planDir, board, errors, checks);
 
     if (sequence?.prefix) {
       const bootstrapId = `${sequence.prefix}-0001`;

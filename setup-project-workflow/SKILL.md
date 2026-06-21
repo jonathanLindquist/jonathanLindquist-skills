@@ -56,9 +56,9 @@ Bootstrap a project so future agents use the same durable local workflow:
    node "$HOME/.agents/skills/setup-project-workflow/scripts/setup_project_workflow.mjs" --project-root "$PWD" --ticket-prefix HAG
    ```
 
-4. Rerun the same setup command when this skill is enhanced and a project was already initialized. The command is intended to be idempotent: it preserves existing ticket sequence state, reuses the existing ticket prefix, keeps current board cards, updates generated machine-readable config, and refreshes safe generated surfaces.
-5. If existing generated docs differ and the script reports a skip, inspect the existing file and merge project-specific content into `AGENTS.md`. Use `--force` only after preserving anything the user needs. `--force` refreshes generated docs and the repo-local Kanban template, but it still preserves ticket sequence state and current board cards.
-6. Setup must always finish by running the verifier. The setup script does this automatically on non-dry-run setup. Run it manually after resolving any skipped generated-file refresh:
+4. Rerun the same setup command when this skill is enhanced and a project was already initialized. The command is intended to be idempotent: it preserves existing ticket sequence state, reuses the existing ticket prefix, keeps current board cards and linked plans, updates generated machine-readable config, and refreshes generated workflow docs plus the repo-local Kanban template.
+5. Keep project-specific implementation history in Kanban cards, linked `docs/plans/*.md` files, or non-managed portions of `AGENTS.md`. Generated workflow docs under `docs/agents/` are tool-owned contract files and setup rewrites them. Use `--force` only after preserving substantive existing `CLAUDE.md` content into `AGENTS.md`.
+6. Setup must always finish by running the verifier. The setup script does this automatically on non-dry-run setup. Run it manually after resolving any protected-file merge:
 
    ```bash
    node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"
@@ -73,6 +73,8 @@ Bootstrap a project so future agents use the same durable local workflow:
    - `AGENTS.md` contains exactly one `## Agent skills` section.
    - `CLAUDE.md` remains a pointer to `AGENTS.md`.
    - `docs/agents/project-workflow.json` describes the board derivation strategy, repo-local Kanban template, plan directory, and ticket sequence file.
+   - Generated workflow docs contain the current setup and ticket workflow contract text.
+   - Every board `Plan:` reference points to an existing file under `docs/plans/`.
    - `docs/agents/ticket-sequence.json` exists and is not reset on reruns.
    - The bootstrap card has a ticket ID and linked plan file under `docs/plans/`.
    - Generated `AGENTS.md` and `docs/agents/ticket-workflow.md` include the ticket start and completion closeout rules.
@@ -171,6 +173,7 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 - Do not commit machine-specific vault paths. Keep the actual vault root in ignored `.env` as `PROJECT_WORKFLOW_OBSIDIAN_VAULT`; committed docs should describe derivation from `$HOME` and that env var.
 - Do not rely on process-level fallback env vars for required local config. If `.env` is missing or incomplete, stop and ask the user to populate it.
 - Do not skip final setup verification. Non-dry-run setup must end with `verify_project_workflow.mjs --project-root "$PWD"` passing.
+- Do not store project-specific implementation history in generated workflow docs. Setup rewrites those docs; use Kanban cards, linked `docs/plans/*.md` files, or non-managed `AGENTS.md` content instead.
 - Do not recalculate a different ticket prefix on rerun. Preserve the existing `docs/agents/ticket-sequence.json` prefix unless the user explicitly performs a prefix migration.
 - Do not reset an existing `docs/agents/ticket-sequence.json`.
 - Store execution plan Markdown files directly under `docs/plans/` with stable ticket-ID filenames.
