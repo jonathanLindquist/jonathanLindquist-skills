@@ -527,9 +527,7 @@ function cardMarkdown({
 
 ${checklist(todos, { checked, indent: "    " })}
 
-    ## Definition of Done
-
-    Completion criteria:
+    ## Acceptance Criteria
 
 ${checklist(acceptance, { checked, indent: "    " })}
 
@@ -672,7 +670,7 @@ Issues and implementation tickets live in the Obsidian Kanban board ${boardRefer
 
 Create tickets with \`new_project_ticket.mjs\`; it allocates stable IDs, appends a Kanban card, creates a linked plan in \`docs/plans/\`, and advances \`docs/agents/ticket-sequence.json\`. Use repeatable \`--todo\`, \`--acceptance\`, and \`--verification\` fields when a ticket is ready for agent implementation. Update ticket status with \`update_project_ticket.mjs\` after code changes and during closeout. See \`docs/agents/ticket-workflow.md\`.
 
-When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the Definition of Done, acceptance criteria, and verification items; add completion notes to the linked plan; move the Kanban card to \`Completed\`; check applicable TODO, DoD, and Verification boxes; and re-read the board to confirm the lane.
+When working from a ticket, read the Kanban card and linked plan before implementation. After making implementation changes, move the card to \`In Progress\` unless it is already there. Before calling the ticket complete, verify the acceptance criteria and verification items; add completion notes to the linked plan; move the Kanban card to \`Completed\`; check applicable TODO, Acceptance Criteria, and Verification boxes; and re-read the board to confirm the lane.
 
 ### Execution plans
 
@@ -787,7 +785,7 @@ Each ticket card should stay short and include:
 - \`## Description\` with all tags and a 1-3 sentence summary
 - \`## Implementation Details\` with \`Ticket\` and \`Plan\` bullets
 - \`## TODO Checklist\`
-- \`## Definition of Done\`
+- \`## Acceptance Criteria\`
 - \`## Verification\`
 
 Use this shape:
@@ -811,9 +809,7 @@ Use this shape:
 
     - [ ] First ticket-specific implementation step
 
-    ## Definition of Done
-
-    Completion criteria:
+    ## Acceptance Criteria
 
     - [ ] Observable ticket-specific result required for completion
 
@@ -824,11 +820,11 @@ Use this shape:
     - [ ] Ticket-specific command or review check
 \`\`\`
 
-For implementation work, record longform context, plans, and completion notes in the linked \`docs/plans/*.md\` file. Keep the card scannable. A \`#ready-for-agent\` card must have ticket-specific TODO, Definition of Done, and Verification items.
+For implementation work, record longform context, plans, and completion notes in the linked \`docs/plans/*.md\` file. Keep the card scannable. A \`#ready-for-agent\` card must have ticket-specific TODO, Acceptance Criteria, and Verification items.
 
 ## Fetching Tickets
 
-When a skill says "fetch the relevant ticket", read the referenced card in the Obsidian Kanban board and then read its linked plan file under \`docs/plans/\`. Use the card and plan as the source of truth for scope, TODOs, Definition of Done, acceptance criteria, constraints, and verification.
+When a skill says "fetch the relevant ticket", read the referenced card in the Obsidian Kanban board and then read its linked plan file under \`docs/plans/\`. Use the card and plan as the source of truth for scope, TODOs, acceptance criteria, constraints, and verification.
 
 ## Pull Requests
 
@@ -923,7 +919,7 @@ Before implementing a ticket:
 
 1. Read the Kanban card from the board.
 2. Read the linked plan under \`docs/plans/\`.
-3. Identify the requested goal, constraints, TODO checklist, Definition of Done, acceptance criteria, and verification commands.
+3. Identify the requested goal, constraints, TODO checklist, acceptance criteria, and verification commands.
 4. If the card and plan conflict, stop and ask the user which source to update.
 
 After changing code for a ticket, run \`update_project_ticket.mjs --ticket <id> --lane "In Progress"\` before continuing unless the ticket is already complete.
@@ -932,10 +928,10 @@ After changing code for a ticket, run \`update_project_ticket.mjs --ticket <id> 
 
 A ticket is not complete until tracker closeout is done. Before saying the work is complete:
 
-1. Verify every Definition of Done, acceptance criterion, and verification item, or explicitly record why an item is not applicable.
+1. Verify every acceptance criterion and verification item, or explicitly record why an item is not applicable.
 2. Add completion notes to the linked plan with implementation summary, commits, verification commands, and results.
 3. Run \`update_project_ticket.mjs --ticket <id> --lane "Completed" --complete --note "<summary>"\`.
-4. Check applicable TODO, Definition of Done, and Verification boxes on the card.
+4. Check applicable TODO, Acceptance Criteria, and Verification boxes on the card.
 5. Add concise commit and verification bullets to the card's \`Implementation Details\` when useful.
 6. Re-read the board and confirm the card is in \`Completed\` before the final response.
 

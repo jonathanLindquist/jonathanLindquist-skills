@@ -22,7 +22,7 @@ Options:
   --lane <name>          Required Kanban lane: Backlog, In Progress, or Completed.
   --triage <tag>         Optional triage tag without #.
   --note <text>          Optional progress or completion note for the linked plan.
-  --complete             Shortcut for --lane Completed and checking card TODO/DoD/Verification boxes.
+  --complete             Shortcut for --lane Completed and checking card TODO/Acceptance Criteria/Verification boxes.
   --help                 Show this help.
 `;
 

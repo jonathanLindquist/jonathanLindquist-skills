@@ -25,7 +25,7 @@ Bootstrap a project so future agents use the same durable local workflow:
 - `docs/agents/kanban-template.md` stores the repo-local Obsidian Kanban template copied from this skill's bundled asset.
 - Execution plan Markdown files live at stable paths directly under `docs/plans/`, for example `docs/plans/HAG-0001-ticket-title.md`.
 - Lane-named plan folders such as `docs/plans/Backlog/`, `docs/plans/In Progress/`, and `docs/plans/Completed/` are legacy. Do not create new plans there.
-- Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Definition of Done/Verification boxes checked.
+- Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Acceptance Criteria/Verification boxes checked.
 - The issue tracker is an Obsidian Kanban board under `$PROJECT_WORKFLOW_OBSIDIAN_VAULT`, with a folder path that mirrors the project path relative to `$HOME`.
 - `.env.example` documents required local settings; ignored `.env` stores the actual vault root and is required before setup can finish.
 - Triage roles are Obsidian tags with Kanban plugin colors.
@@ -115,7 +115,7 @@ node "$HOME/.agents/skills/setup-project-workflow/scripts/new_project_ticket.mjs
   --tag optional-topic
 ```
 
-Only `--title` is required for a draft ticket. The utility defaults to `Backlog`, `#needs-triage`, appends to the bottom of the lane, creates the linked plan file, seeds missing TODO/Definition of Done/Verification sections with explicit placeholders, and advances `docs/agents/ticket-sequence.json`.
+Only `--title` is required for a draft ticket. The utility defaults to `Backlog`, `#needs-triage`, appends to the bottom of the lane, creates the linked plan file, seeds missing TODO/Acceptance Criteria/Verification sections with explicit placeholders, and advances `docs/agents/ticket-sequence.json`.
 
 Use repeatable `--todo`, `--acceptance`, and `--verification` fields for complete agent-readable tickets. `--triage ready-for-agent` requires a real `--description` plus at least one `--todo`, `--acceptance`, and `--verification` field.
 
@@ -165,5 +165,5 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 - Do not reset an existing `docs/agents/ticket-sequence.json`.
 - Store execution plan Markdown files directly under `docs/plans/` with stable ticket-ID filenames.
 - Treat `docs/plans/*.md` as long-lived project history, not disposable scratch.
-- When generated instructions describe ticket work, require agents to read the card and linked plan before implementation, update the Kanban lane after implementation code changes, verify Definition of Done, acceptance criteria, and verification items before closeout, append completion notes to the linked plan, move the card to `Completed`, check applicable TODO/DoD/Verification boxes, and re-read the board to confirm the lane.
+- When generated instructions describe ticket work, require agents to read the card and linked plan before implementation, update the Kanban lane after implementation code changes, verify acceptance criteria and verification items before closeout, append completion notes to the linked plan, move the card to `Completed`, check applicable TODO/Acceptance Criteria/Verification boxes, and re-read the board to confirm the lane.
 - When setup work is complete, leave the bootstrap implementation card in the Kanban board's `Completed` lane with a concrete ticket ID and verification data.

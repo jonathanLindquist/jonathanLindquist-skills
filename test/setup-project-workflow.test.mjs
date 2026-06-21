@@ -51,6 +51,9 @@ test("setup copies the bundled Kanban template into the target project", async (
   const templatePath = path.join(projectRoot, "docs", "agents", "kanban-template.md");
   const template = await fs.readFile(templatePath, "utf8");
   assert.match(template, /ABC-0001 Ticket title/);
+  assert.match(template, /## Acceptance Criteria/);
+  assert.doesNotMatch(template, /## Definition of Done/);
+  assert.doesNotMatch(template, /Completion criteria:/);
   assert.match(template, /"tag-colors"/);
 
   const workflow = JSON.parse(
@@ -74,6 +77,9 @@ test("setup copies the bundled Kanban template into the target project", async (
   assert.ok(boardPath, "expected a Kanban board under the vault");
   const board = await fs.readFile(boardPath, "utf8");
   assert.match(board, /TMP-0001 Initialize Project Workflow/);
+  assert.match(board, /## Acceptance Criteria/);
+  assert.doesNotMatch(board, /## Definition of Done/);
+  assert.doesNotMatch(board, /Completion criteria:/);
   assert.match(board, /"tag-colors"/);
   assert.doesNotMatch(board, /Read this card and the linked plan before implementation/);
   assert.doesNotMatch(board, /Fill in linked plan with scope and acceptance criteria/);
@@ -119,6 +125,9 @@ test("new ticket writes specific checklist fields to card and plan", async (t) =
   assert.match(board, /#ready-for-agent #docs/);
   assert.match(board, /- \[ \] Review existing strategy docs for recurring backtesting terms\./);
   assert.match(board, /- \[ \] Add canonical glossary entries to the linked plan\./);
+  assert.match(board, /## Acceptance Criteria/);
+  assert.doesNotMatch(board, /## Definition of Done/);
+  assert.doesNotMatch(board, /Completion criteria:/);
   assert.match(board, /- \[ \] The plan defines canonical terms for signals, trades, and results\./);
   assert.match(board, /## Verification/);
   assert.match(board, /- \[ \] Review the linked plan for unresolved TODO placeholders\./);
@@ -131,6 +140,9 @@ test("new ticket writes specific checklist fields to card and plan", async (t) =
     "TMP-0002-capture-backtesting-vocabulary.md",
   );
   const plan = await fs.readFile(planPath, "utf8");
+  assert.match(plan, /## Acceptance Criteria/);
+  assert.doesNotMatch(plan, /## Definition of Done/);
+  assert.doesNotMatch(plan, /Completion criteria:/);
   assert.match(plan, /- \[ \] Review existing strategy docs for recurring backtesting terms\./);
   assert.match(plan, /- \[ \] Add canonical glossary entries to the linked plan\./);
   assert.match(plan, /- \[ \] The plan defines canonical terms for signals, trades, and results\./);

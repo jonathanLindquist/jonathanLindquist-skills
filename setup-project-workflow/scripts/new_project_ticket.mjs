@@ -395,9 +395,7 @@ function cardMarkdown({
 
 ${checklist(todos, draftTodo, { indent: "    " })}
 
-    ## Definition of Done
-
-    Completion criteria:
+    ## Acceptance Criteria
 
 ${checklist(acceptance, draftAcceptance, { indent: "    " })}
 

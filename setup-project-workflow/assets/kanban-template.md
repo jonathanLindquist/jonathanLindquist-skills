@@ -22,9 +22,7 @@ kanban-plugin: board
 
     - [ ] First ticket-specific implementation step
 
-    ## Definition of Done
-
-    Completion criteria:
+    ## Acceptance Criteria
 
     - [ ] Observable ticket-specific result required for completion
 
