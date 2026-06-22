@@ -1,0 +1,25 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      agent-sync:
+        specifier: https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.2.0
+        version: https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.2.0
+
+packages:
+
+  agent-sync@https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.2.0:
+    resolution: {tarball: https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.2.0}
+    version: 0.1.0
+    engines: {node: '>=20'}
+    hasBin: true
+
+snapshots:
+
+  agent-sync@https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.2.0: {}
