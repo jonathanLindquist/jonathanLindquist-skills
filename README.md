@@ -17,7 +17,7 @@ Clone the repo, then install the skills into `~/.agents/skills`:
 ```bash
 git clone <this-repo-url> ~/jonathanLindquist-skills
 cd ~/jonathanLindquist-skills
-npm install
+pnpm install
 node scripts/install.mjs
 ```
 
@@ -86,7 +86,7 @@ node scripts/install.mjs \
 Local tools:
 
 - `node`, for the bundled `.mjs` workflow scripts.
-- `npm`, to install the required `agent-sync` dependency.
+- `pnpm`, to install the required `agent-sync` dependency.
 - `git`, because the skill is designed for repository setup work.
 - Obsidian, for the local issue tracker.
 - The Obsidian Kanban plugin, for board lanes and tag colors.
