@@ -284,7 +284,7 @@ function findCardRange(markdown, ticketId) {
   };
 }
 
-function insertCardAtBottomOfLane(markdown, lane, cardMarkdown) {
+function insertCardInLane(markdown, lane, cardMarkdown, position) {
   const lines = markdown.split(/\r?\n/);
   const laneIndex = lines.findIndex((line) => line.trim() === `## ${lane}`);
 
@@ -292,11 +292,15 @@ function insertCardAtBottomOfLane(markdown, lane, cardMarkdown) {
     throw new Error(`Lane not found: ${lane}`);
   }
 
-  let insertIndex = lines.length;
-  for (let index = laneIndex + 1; index < lines.length; index += 1) {
-    if (/^##\s+/.test(lines[index]) || lines[index].startsWith("%% kanban:settings")) {
-      insertIndex = index;
-      break;
+  let insertIndex = laneIndex + 1;
+
+  if (position === "bottom") {
+    insertIndex = lines.length;
+    for (let index = laneIndex + 1; index < lines.length; index += 1) {
+      if (/^##\s+/.test(lines[index]) || lines[index].startsWith("%% kanban:settings")) {
+        insertIndex = index;
+        break;
+      }
     }
   }
 
@@ -367,8 +371,9 @@ function moveCard(markdown, ticketId, targetLane, cardLines) {
   }
 
   const withoutCard = removeCard(markdown, range);
+  const position = targetLane === "Completed" ? "top" : "bottom";
   return {
-    markdown: insertCardAtBottomOfLane(withoutCard, targetLane, cardLines.join("\n")),
+    markdown: insertCardInLane(withoutCard, targetLane, cardLines.join("\n"), position),
     previousLane: range.lane,
     changedLane: true,
   };

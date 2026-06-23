@@ -423,11 +423,37 @@ test("completed ticket insertion preserves existing completed card details", asy
     "--note",
     "Verified completed lane structure.",
   ]);
+  runOk(newTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--title",
+    "Implement follow-up ticket",
+    "--description",
+    "Verify completed cards remain newest first.",
+    "--tag",
+    "tests",
+  ]);
+  runOk(updateTicketScript, [
+    "--project-root",
+    projectRoot,
+    "--ticket",
+    "TMP-0003",
+    "--lane",
+    "Completed",
+    "--complete",
+    "--note",
+    "Verified completed lane order.",
+  ]);
 
   const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
   assert.ok(boardPath, "expected a Kanban board under the vault");
   const board = await fs.readFile(boardPath, "utf8");
   assert.deepEqual(boardStructureIssues(board), []);
+  assert.deepEqual(laneTicketIds(board, "Completed").slice(0, 3), [
+    "TMP-0003",
+    "TMP-0002",
+    "TMP-0001",
+  ]);
 });
 
 function runOk(scriptPath, args) {
@@ -493,6 +519,26 @@ function boardStructureIssues(markdown) {
   }
 
   return issues;
+}
+
+function laneTicketIds(markdown, lane) {
+  const lines = markdown.split(/\r?\n/);
+  const laneIndex = lines.findIndex((line) => line.trim() === `## ${lane}`);
+  assert.notEqual(laneIndex, -1, `expected lane ${lane}`);
+
+  const ids = [];
+  for (let index = laneIndex + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index]) || lines[index].startsWith("%% kanban:settings")) {
+      break;
+    }
+
+    const match = lines[index].match(/^- \[[ xX]\].*?(TMP-\d{4})/);
+    if (match) {
+      ids.push(match[1]);
+    }
+  }
+
+  return ids;
 }
 
 async function tempWorkspace(t) {
