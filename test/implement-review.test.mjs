@@ -5,8 +5,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const implementReviewSkill = path.join(repoRoot, "implement-review", "SKILL.md");
-const securityScanSkill = path.join(repoRoot, "security-scan", "SKILL.md");
+const skillsRoot = path.join(repoRoot, "skills");
+const implementReviewSkill = path.join(skillsRoot, "implement-review", "SKILL.md");
+const securityScanSkill = path.join(skillsRoot, "security-scan", "SKILL.md");
 const retiredSkillName = ["implement", "review", "security"].join("-");
 
 test("implement-review does not invoke security-scan", async () => {

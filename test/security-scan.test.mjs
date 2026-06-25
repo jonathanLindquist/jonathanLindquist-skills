@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const securityScanRoot = path.join(repoRoot, "security-scan");
+const securityScanRoot = path.join(repoRoot, "skills", "security-scan");
 const subskillsRoot = path.join(securityScanRoot, "subskills");
 const expectedSubskills = [
   "sast-businesslogic",

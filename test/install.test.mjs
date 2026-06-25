@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.join(repoRoot, "skills");
 const installScript = path.join(repoRoot, "scripts", "install.mjs");
 const skillName = "setup-project-workflow";
 
@@ -29,7 +30,7 @@ test("initial install can sync the selected skill through agent-sync", async (t)
   assert.equal(result.status, 0, result.stderr);
   assert.equal(
     await fs.readlink(path.join(homeDir, ".agents", "skills", skillName)),
-    path.join(repoRoot, skillName),
+    path.join(skillsRoot, skillName),
   );
   assert.deepEqual(await agentSync.calls(), [["--all-providers", "--skill", skillName]]);
 });
@@ -59,6 +60,19 @@ test("update replaces an existing installed skill and syncs only that skill", as
   const copiedSkill = await fs.readFile(path.join(installedSkill, "SKILL.md"), "utf8");
   assert.match(copiedSkill, /^name: setup-project-workflow/m);
   assert.deepEqual(await agentSync.calls(), [["--all-providers", "--skill", skillName]]);
+});
+
+test("replace handles an existing broken installed symlink", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const homeDir = path.join(workspace, "home");
+  const installedSkill = path.join(homeDir, ".agents", "skills", skillName);
+  await fs.mkdir(path.dirname(installedSkill), { recursive: true });
+  await fs.symlink(path.join(workspace, "missing-skill-source"), installedSkill, "dir");
+
+  const result = runInstall(["--replace", "--skill", skillName], homeDir);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await fs.readlink(installedSkill), path.join(skillsRoot, skillName));
 });
 
 test("update refuses to run without an explicit skill", async (t) => {
@@ -95,7 +109,7 @@ test("sync can target a specific agent-sync provider flag", async (t) => {
   assert.deepEqual(await agentSync.calls(), [["--claude-code", "--skill", skillName]]);
 });
 
-test("installing all skills exposes only top-level skill folders", async (t) => {
+test("installing all skills exposes only installable folders under skills/", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
   const result = runInstall([], homeDir);
@@ -130,6 +144,26 @@ test("installing all skills exposes only top-level skill folders", async (t) => 
       ),
     ),
   );
+});
+
+test("installing all skills fails if the skills source directory is missing", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const homeDir = path.join(workspace, "home");
+  const missingRoot = path.join(workspace, "missing-repo");
+  await fs.mkdir(path.join(missingRoot, "scripts"), { recursive: true });
+  await fs.cp(installScript, path.join(missingRoot, "scripts", "install.mjs"));
+
+  const result = spawnSync(process.execPath, [path.join(missingRoot, "scripts", "install.mjs")], {
+    cwd: missingRoot,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: homeDir,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /No skills directory found/);
 });
 
 function runInstall(args, homeDir) {

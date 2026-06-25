@@ -9,24 +9,28 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const setupScript = path.join(
   repoRoot,
+  "skills",
   "setup-project-workflow",
   "scripts",
   "setup_project_workflow.mjs",
 );
 const newTicketScript = path.join(
   repoRoot,
+  "skills",
   "setup-project-workflow",
   "scripts",
   "new_project_ticket.mjs",
 );
 const updateTicketScript = path.join(
   repoRoot,
+  "skills",
   "setup-project-workflow",
   "scripts",
   "update_project_ticket.mjs",
 );
 const verifyScript = path.join(
   repoRoot,
+  "skills",
   "setup-project-workflow",
   "scripts",
   "verify_project_workflow.mjs",

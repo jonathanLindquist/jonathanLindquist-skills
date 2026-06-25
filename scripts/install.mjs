@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.join(repoRoot, "skills");
 const defaultTarget = path.join(os.homedir(), ".agents", "skills");
 const localAgentSyncBin = path.join(repoRoot, "node_modules", ".bin", "agent-sync");
 const skillNamePattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -12,7 +13,7 @@ const usage = `Usage:
   install.mjs [options]
 
 Options:
-  --skill <name>     Skill to install. Defaults to all top-level skill folders.
+  --skill <name>     Skill to install. Defaults to all folders under skills/.
   --target <path>    Skills directory. Defaults to $HOME/.agents/skills.
   --mode <mode>      symlink or copy. Defaults to symlink.
   --replace          Replace an existing installed skill.
@@ -139,8 +140,8 @@ function validateTarget(target) {
 }
 
 function validateInstallPaths(source, destination, target) {
-  if (!isInside(repoRoot, source)) {
-    throw new Error(`Refusing to install from outside this repo: ${source}`);
+  if (!isInside(skillsRoot, source)) {
+    throw new Error(`Refusing to install from outside this repo's skills directory: ${source}`);
   }
 
   if (!isInside(target, destination)) {
@@ -164,19 +165,23 @@ function validateInstallPaths(source, destination, target) {
   }
 }
 
-function topLevelSkillNames() {
+function installableSkillNames() {
+  if (!fs.existsSync(skillsRoot)) {
+    throw new Error(`No skills directory found at ${skillsRoot}.`);
+  }
+
   return fs
-    .readdirSync(repoRoot, { withFileTypes: true })
+    .readdirSync(skillsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .filter(isValidSkillName)
-    .filter((name) => fs.existsSync(path.join(repoRoot, name, "SKILL.md")))
+    .filter((name) => fs.existsSync(path.join(skillsRoot, name, "SKILL.md")))
     .sort();
 }
 
 function installSkill(name, options) {
   validateSkillName(name);
-  const source = path.join(repoRoot, name);
+  const source = path.join(skillsRoot, name);
   const destination = path.join(options.target, name);
   validateInstallPaths(source, destination, options.target);
 
@@ -186,13 +191,14 @@ function installSkill(name, options) {
 
   fs.mkdirSync(options.target, { recursive: true });
 
-  if (fs.existsSync(destination) || fs.lstatSync(destination, { throwIfNoEntry: false })) {
+  const existingDestination = fs.lstatSync(destination, { throwIfNoEntry: false });
+  if (existingDestination) {
     if (!options.replace) {
       throw new Error(
         `${destination} already exists. Remove it first or rerun with --replace.`,
       );
     }
-    fs.rmSync(destination, { recursive: true, force: true });
+    removeExistingDestination(destination, existingDestination);
   }
 
   if (options.mode === "symlink") {
@@ -202,6 +208,15 @@ function installSkill(name, options) {
   }
 
   console.log(`${name}: ${options.mode} -> ${destination}`);
+}
+
+function removeExistingDestination(destination, stats) {
+  if (stats.isSymbolicLink()) {
+    fs.unlinkSync(destination);
+    return;
+  }
+
+  fs.rmSync(destination, { recursive: true, force: true });
 }
 
 function syncProviderSkills(skillNames, options) {
@@ -227,10 +242,10 @@ function syncProviderSkills(skillNames, options) {
 
 function run() {
   const options = parseArgs(process.argv.slice(2));
-  const names = options.skill ? [options.skill] : topLevelSkillNames();
+  const names = options.skill ? [options.skill] : installableSkillNames();
 
   if (names.length === 0) {
-    throw new Error("No top-level skill folders found.");
+    throw new Error("No installable skill folders found under skills/.");
   }
 
   for (const name of names) {
