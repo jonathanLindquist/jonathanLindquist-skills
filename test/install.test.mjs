@@ -105,7 +105,7 @@ test("installing all skills exposes only top-level skill folders", async (t) => 
   const installedSkillsRoot = path.join(homeDir, ".agents", "skills");
   const installedEntries = await fs.readdir(installedSkillsRoot);
   for (const expectedSkill of [
-    "implement-review-security",
+    "implement-review",
     "security-scan",
     "setup-project-workflow",
   ]) {

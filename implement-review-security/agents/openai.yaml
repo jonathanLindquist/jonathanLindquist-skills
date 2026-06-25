@@ -1,4 +1,0 @@
-interface:
-  display_name: "Implement Review Security"
-  short_description: "Implementation workflow with security scan"
-  default_prompt: "Use $implement-review-security to implement the requested change, review it, and run the security scan before closeout."

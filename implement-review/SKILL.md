@@ -1,14 +1,13 @@
 ---
-name: implement-review-security
+name: implement-review
 description: >-
-  Default implementation workflow that finishes with review and a bundled
-  security scan. Use when implementing a PRD, issue, ticket, card, feature, bug
-  fix, or refactor where file changes should be tested, reviewed, and then
-  checked with security-scan before closeout.
+  Default implementation workflow that finishes with review. Use when
+  implementing a PRD, issue, ticket, card, feature, bug fix, or refactor where
+  file changes should be tested and reviewed before closeout.
 ---
 
 Implement the work described by the user using the normal implementation
-discipline, then run a security scan before the final response.
+discipline, then review the change before the final response.
 
 If repo-local instructions conflict with this skill, follow the repo-local
 instructions.
@@ -34,19 +33,7 @@ files. Run the fullest practical test suite once at the end.
 Once implementation checks pass, use /review to review the work when available
 and proportionate to the change.
 
-After review, invoke the /security-scan skill before closeout. Pass the changed
-files, affected modules, new or changed entry points, and auth/data/schema
-implications so security-scan can create or refresh `sast/architecture.md`.
-Otherwise, read `$HOME/.agents/skills/security-scan/SKILL.md` and follow it from
-the current repo root.
-
-Treat confirmed security regressions as part of the implementation work when
-they are caused by the current change and can be fixed within scope. Fix them,
-rerun the relevant focused tests, and rerun the relevant security-scan checks.
-If a finding is pre-existing, out of scope, or needs product input, report it
-separately rather than hiding it.
-
 Commit only when the work comes from a PRD, issue, ticket, or card, or when the
 user explicitly asks for a commit. Otherwise leave changes uncommitted and
-report the changed files, tests changed, checks run, review result, security
-scan result, and any reason tests were not added.
+report the changed files, tests changed, checks run, review result, and any
+reason tests were not added.

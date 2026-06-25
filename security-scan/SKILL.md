@@ -2,9 +2,9 @@
 name: security-scan
 description: >-
   Run a bundled SAST-style security scan by orchestrating 13 vendored detection
-  checks as parallel subagents and writing results under sast/. Use when asked
-  to run a security scan, vulnerability scan, SAST review, or when invoked by
-  implement-review-security after implementation work.
+  checks as parallel subagents and writing results under sast/. Use only when
+  the user explicitly asks to run a security scan, vulnerability scan, or SAST
+  review.
 ---
 
 Run a static security assessment for the current repo. This skill vendors the
@@ -24,10 +24,10 @@ authorizes that scope. By default, write scan artifacts only under `sast/`.
 
 ## Workflow
 
-1. Establish scope from the user request and current repo state. When invoked
-   after implementation work, include the changed files and likely affected
-   flows in subagent prompts, but let checks broaden if needed to prove data
-   flow or exploitability.
+1. Establish scope from the explicit user request and current repo state. If the
+   user scopes the scan to recent implementation work, include the changed files
+   and likely affected flows in subagent prompts, but let checks broaden if
+   needed to prove data flow or exploitability.
 2. Create `sast/` if missing, then create or refresh `sast/architecture.md`
    before launching checks. This file is the scan module's internal interface
    to the 13 detection adapters. If durable repo docs exist, such as
@@ -37,9 +37,10 @@ authorizes that scope. By default, write scan artifacts only under `sast/`.
 3. When refreshing `sast/architecture.md`, read the existing file, inspect the
    current repo state, and update stale sections instead of blindly appending.
    Cover stack, entry points, auth/authz, data stores, sensitive data, trust
-   boundaries, and changed areas. When invoked after implementation work, add
-   or update a `Change Impact Notes` section with changed files, affected
-   modules, new or changed entry points, and auth/data/schema implications.
+   boundaries, and changed areas. If the user scoped the scan to recent
+   implementation work, add or update a `Change Impact Notes` section with
+   changed files, affected modules, new or changed entry points, and
+   auth/data/schema implications.
 4. Use this stable architecture template:
 
    ```markdown

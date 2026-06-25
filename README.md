@@ -8,8 +8,8 @@ This repo is a work in progress. Test workflow changes only against temporary pr
 
 | Skill | Purpose |
 | --- | --- |
-| `implement-review-security` | Implementation workflow that follows the normal test/review discipline, then invokes `security-scan` before closeout. |
-| `security-scan` | Bundled SAST-style security scan that orchestrates 13 vendored detection checks as nested resources. |
+| `implement-review` | Implementation workflow that follows the normal test/review discipline before closeout. |
+| `security-scan` | Manually triggered bundled SAST-style security scan that orchestrates 13 vendored detection checks as nested resources. |
 | `setup-project-workflow` | Bootstrap repo-local agent docs, Obsidian Kanban ticket tracking, stable plan files, ticket numbering, and ticket status utilities. |
 
 ## Install
