@@ -13,7 +13,7 @@ const usage = `Usage:
 
 Options:
   --skill <name>     Skill to install. Defaults to all top-level skill folders.
-  --target <path>    Skills directory. Defaults to ~/.agents/skills.
+  --target <path>    Skills directory. Defaults to $HOME/.agents/skills.
   --mode <mode>      symlink or copy. Defaults to symlink.
   --replace          Replace an existing installed skill.
   --update           Replace one skill and run agent-sync for it.
@@ -98,8 +98,12 @@ function requireValue(argv, index, flag, { allowFlagValue = false } = {}) {
 }
 
 function expandHome(value) {
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
+  const homeDir = os.homedir();
+  if (value === "$HOME" || value === "${HOME}") return homeDir;
+  if (value === "~") return homeDir;
+  if (value.startsWith("$HOME/")) return path.join(homeDir, value.slice("$HOME/".length));
+  if (value.startsWith("${HOME}/")) return path.join(homeDir, value.slice("${HOME}/".length));
+  if (value.startsWith("~/")) return path.join(homeDir, value.slice(2));
   return value;
 }
 

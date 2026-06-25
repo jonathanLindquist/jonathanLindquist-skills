@@ -11,3 +11,6 @@ setup-project-workflow-handoff-*.md
 # Scratch areas used while validating workflow behavior.
 .tmp/
 tmp/
+
+# Agent security scan artifacts
+sast/

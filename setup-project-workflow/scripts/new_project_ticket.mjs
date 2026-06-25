@@ -127,7 +127,10 @@ function cleanedList(values) {
 }
 
 function expandHome(value) {
+  if (value === "$HOME" || value === "${HOME}") return homeDir;
   if (value === "~") return homeDir;
+  if (value.startsWith("$HOME/")) return path.join(homeDir, value.slice("$HOME/".length));
+  if (value.startsWith("${HOME}/")) return path.join(homeDir, value.slice("${HOME}/".length));
   if (value.startsWith("~/")) return path.join(homeDir, value.slice(2));
   return value;
 }

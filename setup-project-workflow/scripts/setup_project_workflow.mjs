@@ -115,7 +115,10 @@ function parseArgs(argv) {
 }
 
 function expandHome(value) {
+  if (value === "$HOME" || value === "${HOME}") return homeDir;
   if (value === "~") return homeDir;
+  if (value.startsWith("$HOME/")) return path.join(homeDir, value.slice("$HOME/".length));
+  if (value.startsWith("${HOME}/")) return path.join(homeDir, value.slice("${HOME}/".length));
   if (value.startsWith("~/")) return path.join(homeDir, value.slice(2));
   return value;
 }
@@ -140,6 +143,10 @@ function projectRelativePath(projectRoot) {
 
 function boardReference() {
   return `derived from \`$${vaultEnvVar}\` and this repository's path relative to \`$HOME\``;
+}
+
+function pathPortabilityRule() {
+  return `Never commit absolute local paths in git-tracked files, generated docs, Kanban cards, or linked plans. Use repo-relative paths for project files and environment variables such as \`$HOME\` and \`$${vaultEnvVar}\` for machine-specific roots. Keep real absolute local paths only in ignored local files such as \`.env\`.`;
 }
 
 function parseEnv(content) {
@@ -305,7 +312,7 @@ ${envExampleSnippet()}`;
 
 function envExampleSnippet() {
   return `# setup-project-workflow: root path to the Obsidian vault that should contain this project's Kanban board.
-# Use an absolute path or a ~ path.
+# Use $HOME, \${HOME}, ~, or another local-only path. Do not commit actual vault roots.
 ${vaultEnvVar}=
 `;
 }
@@ -339,23 +346,30 @@ function gitignoreIgnoresEnv(markdown) {
   });
 }
 
+function gitignoreIgnoresSast(markdown) {
+  return markdown.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return trimmed === "sast/" || trimmed === "/sast/";
+  });
+}
+
 function updateGitignore(projectRoot, options, actions) {
   const gitignorePath = path.join(projectRoot, ".gitignore");
   const current = readFileIfExists(gitignorePath);
+  const ignoresEnv = current !== null && gitignoreIgnoresEnv(current);
+  const ignoresSast = current !== null && gitignoreIgnoresSast(current);
 
-  if (current !== null && gitignoreIgnoresEnv(current)) {
+  if (current !== null && ignoresEnv && ignoresSast) {
     actions.push(`unchanged ${displayPath(gitignorePath)}`);
     return;
   }
 
   const base = current === null ? "" : current.trimEnd();
+  const stanzas = [];
+  if (!ignoresEnv) stanzas.push("# Local machine configuration\n.env");
+  if (!ignoresSast) stanzas.push("# Agent security scan artifacts\nsast/");
   const prefix = base ? `${base}\n\n` : "";
-  writeIfChanged(
-    gitignorePath,
-    `${prefix}# Local machine configuration\n.env\n`,
-    options,
-    actions,
-  );
+  writeIfChanged(gitignorePath, `${prefix}${stanzas.join("\n\n")}\n`, options, actions);
 }
 
 function updateLocalConfigFiles(projectRoot, options, actions) {
@@ -687,6 +701,10 @@ node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflo
 
 Run the same command manually after resolving any protected-file merge.
 
+### Path portability
+
+${pathPortabilityRule()}
+
 ### Execution plans
 
 Execution plan Markdown files live under stable paths in \`docs/plans/\`, for example \`docs/plans/${ticketPlanFileName(
@@ -785,6 +803,10 @@ Issues, implementation tickets, and project task state for this repo live in an 
 
 The board path mirrors the project path relative to the home directory. Keep the vault root in \`.env\`, not in committed docs.
 
+## Path Portability
+
+${pathPortabilityRule()}
+
 ## Lanes
 
 - \`Backlog\` means not started.
@@ -876,6 +898,10 @@ How agents create and maintain project tickets.
 - Setup verification is performed by \`verify_project_workflow.mjs\`, which the setup command runs automatically after non-dry-run setup.
 
 Lane-named plan folders such as \`docs/plans/Backlog/\`, \`docs/plans/In Progress/\`, and \`docs/plans/Completed/\` are legacy. Do not create new plan files there.
+
+## Path Portability
+
+${pathPortabilityRule()}
 
 ## Creating Tickets
 

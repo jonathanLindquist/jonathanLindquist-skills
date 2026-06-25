@@ -25,6 +25,7 @@ Bootstrap a project so future agents use the same durable local workflow:
 - `docs/agents/kanban-template.md` stores the repo-local Obsidian Kanban template copied from this skill's bundled asset.
 - `verify_project_workflow.mjs` is the deterministic final gate for setup and setup reruns.
 - Execution plan Markdown files live at stable paths directly under `docs/plans/`, for example `docs/plans/HAG-0001-ticket-title.md`.
+- Tracked project files must stay path-portable: use repo-relative paths for files in the repo and `$HOME` or `$PROJECT_WORKFLOW_OBSIDIAN_VAULT` for machine-specific roots.
 - Lane-named plan folders such as `docs/plans/Backlog/`, `docs/plans/In Progress/`, and `docs/plans/Completed/` are legacy. Do not create new plans there.
 - Ticket work must begin by reading the Kanban card and linked plan, and it is not complete until the plan has completion notes and the Kanban card is moved to `Completed` with applicable TODO/Acceptance Criteria/Verification boxes checked.
 - The issue tracker is an Obsidian Kanban board under `$PROJECT_WORKFLOW_OBSIDIAN_VAULT`, with a folder path that mirrors the project path relative to `$HOME`.
@@ -170,7 +171,7 @@ $PROJECT_WORKFLOW_OBSIDIAN_VAULT/
 - Do not make `CLAUDE.md` a second source of truth. Move shared guidance into `AGENTS.md`.
 - Do not flag missing `CONTEXT.md` or `docs/adr/` as a problem. The generated domain doc tells agents to read them if they exist and proceed silently if they do not.
 - Do not overwrite substantive existing `CLAUDE.md` content without preserving it in `AGENTS.md` first.
-- Do not commit machine-specific vault paths. Keep the actual vault root in ignored `.env` as `PROJECT_WORKFLOW_OBSIDIAN_VAULT`; committed docs should describe derivation from `$HOME` and that env var.
+- Do not commit absolute local paths in git-tracked files, generated docs, Kanban cards, or linked plans. Use repo-relative paths for project files and environment variables such as `$HOME` and `$PROJECT_WORKFLOW_OBSIDIAN_VAULT` for machine-specific roots. Keep real absolute local paths only in ignored local files such as `.env`.
 - Do not rely on process-level fallback env vars for required local config. If `.env` is missing or incomplete, stop and ask the user to populate it.
 - Do not skip final setup verification. Non-dry-run setup must end with `verify_project_workflow.mjs --project-root "$PWD"` passing.
 - Do not store project-specific implementation history in generated workflow docs. Setup rewrites those docs; use Kanban cards, linked `docs/plans/*.md` files, or non-managed `AGENTS.md` content instead.

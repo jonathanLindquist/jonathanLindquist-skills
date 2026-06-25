@@ -95,6 +95,43 @@ test("sync can target a specific agent-sync provider flag", async (t) => {
   assert.deepEqual(await agentSync.calls(), [["--claude-code", "--skill", skillName]]);
 });
 
+test("installing all skills exposes only top-level skill folders", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const homeDir = path.join(workspace, "home");
+  const result = runInstall([], homeDir);
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const installedSkillsRoot = path.join(homeDir, ".agents", "skills");
+  const installedEntries = await fs.readdir(installedSkillsRoot);
+  for (const expectedSkill of [
+    "implement-review-security",
+    "security-scan",
+    "setup-project-workflow",
+  ]) {
+    assert.ok(installedEntries.includes(expectedSkill), `${expectedSkill} should be installed`);
+  }
+  assert.ok(
+    !installedEntries.some((entry) => entry.startsWith("sast-")),
+    "vendored SAST subskills should not install as top-level skills",
+  );
+
+  await assert.rejects(fs.lstat(path.join(installedSkillsRoot, "sast-sqli")), {
+    code: "ENOENT",
+  });
+  assert.ok(
+    await pathExists(
+      path.join(
+        installedSkillsRoot,
+        "security-scan",
+        "subskills",
+        "sast-sqli",
+        "SKILL.md",
+      ),
+    ),
+  );
+});
+
 function runInstall(args, homeDir) {
   return spawnSync(process.execPath, [installScript, ...args], {
     cwd: repoRoot,
@@ -104,6 +141,16 @@ function runInstall(args, homeDir) {
       HOME: homeDir,
     },
   });
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.lstat(filePath);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function tempWorkspace(t) {

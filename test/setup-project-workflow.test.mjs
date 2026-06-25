@@ -69,6 +69,10 @@ test("setup copies the bundled Kanban template into the target project", async (
   );
   assert.equal(workflow.kanbanTemplatePath, "docs/agents/kanban-template.md");
 
+  const gitignore = await fs.readFile(path.join(projectRoot, ".gitignore"), "utf8");
+  assert.match(gitignore, /^\.env$/m);
+  assert.match(gitignore, /^sast\/$/m);
+
   const issueTracker = await fs.readFile(
     path.join(projectRoot, "docs", "agents", "issue-tracker.md"),
     "utf8",
@@ -111,6 +115,69 @@ test("verification command fails when required setup artifacts are missing", asy
   const result = runFail(verifyScript, ["--project-root", projectRoot]);
   assert.match(result.stderr, /Project workflow verification failed:/);
   assert.match(result.stderr, /AGENTS\.md must contain exactly one ## Agent skills section/);
+});
+
+test("setup adds sast scan artifacts to an existing gitignore", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const projectRoot = path.join(workspace, "example-project");
+  const vaultRoot = path.join(workspace, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT=${vaultRoot}\n`,
+  );
+  await fs.writeFile(path.join(projectRoot, ".gitignore"), "node_modules/\n.env\n");
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"]);
+
+  const gitignore = await fs.readFile(path.join(projectRoot, ".gitignore"), "utf8");
+  assert.match(gitignore, /^node_modules\/$/m);
+  assert.match(gitignore, /^\.env$/m);
+  assert.match(gitignore, /^sast\/$/m);
+});
+
+test("setup writes path portability guard into generated instructions", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const homeDir = path.join(workspace, "home");
+  const projectRoot = path.join(homeDir, "projects", "example-project");
+  const vaultRoot = path.join(homeDir, "vault");
+  await fs.mkdir(projectRoot, { recursive: true });
+  await fs.mkdir(vaultRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, ".env"),
+    `PROJECT_WORKFLOW_OBSIDIAN_VAULT="$HOME/vault"\n`,
+  );
+
+  runOk(setupScript, ["--project-root", projectRoot, "--ticket-prefix", "TMP"], {
+    HOME: homeDir,
+  });
+
+  const portabilityGuard = /Never commit absolute local paths/;
+  const trackedInstructionFiles = [
+    "AGENTS.md",
+    path.join("docs", "agents", "issue-tracker.md"),
+    path.join("docs", "agents", "ticket-workflow.md"),
+  ];
+
+  for (const relativePath of trackedInstructionFiles) {
+    const content = await fs.readFile(path.join(projectRoot, relativePath), "utf8");
+    assert.match(content, portabilityGuard, `${relativePath} should include path guard`);
+    assert.match(content, /\$HOME/, `${relativePath} should point agents to $HOME`);
+    assert.match(
+      content,
+      /\$PROJECT_WORKFLOW_OBSIDIAN_VAULT/,
+      `${relativePath} should point agents to PROJECT_WORKFLOW_OBSIDIAN_VAULT`,
+    );
+    assert.doesNotMatch(
+      content,
+      new RegExp(escapeRegExp(workspace)),
+      `${relativePath} should not include temp workspace absolute paths`,
+    );
+  }
+
+  const boardPath = await findFirst(vaultRoot, (filePath) => filePath.endsWith("Kanban.md"));
+  assert.ok(boardPath, "expected $HOME in .env to resolve to the test home directory");
 });
 
 test("setup can be rerun on an initialized project without resetting ticket state", async (t) => {
@@ -456,20 +523,22 @@ test("completed ticket insertion preserves existing completed card details", asy
   ]);
 });
 
-function runOk(scriptPath, args) {
+function runOk(scriptPath, args, env = {}) {
   const result = spawnSync(process.execPath, [scriptPath, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 
   assert.equal(result.status, 0, result.stderr);
   return result;
 }
 
-function runFail(scriptPath, args) {
+function runFail(scriptPath, args, env = {}) {
   const result = spawnSync(process.execPath, [scriptPath, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 
   assert.notEqual(result.status, 0, result.stdout);
@@ -539,6 +608,10 @@ function laneTicketIds(markdown, lane) {
   }
 
   return ids;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function tempWorkspace(t) {

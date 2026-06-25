@@ -1,0 +1,9 @@
+{
+  "provider": "obsidian-kanban",
+  "vaultEnvVar": "PROJECT_WORKFLOW_OBSIDIAN_VAULT",
+  "boardPathStrategy": "home-relative-project-path",
+  "kanbanTemplatePath": "docs/agents/kanban-template.md",
+  "planDir": "docs/plans",
+  "ticketSequencePath": "docs/agents/ticket-sequence.json",
+  "verifyCommand": "node \"$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs\" --project-root \"$PWD\""
+}

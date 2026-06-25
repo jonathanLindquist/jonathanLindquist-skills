@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Scan"
+  short_description: "Parallel SAST review with bundled checks"
+  default_prompt: "Use $security-scan to run the bundled SAST security assessment for this codebase."

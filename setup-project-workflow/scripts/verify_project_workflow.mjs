@@ -8,6 +8,7 @@ const bundledKanbanTemplatePath = path.resolve(scriptDir, "..", "assets", "kanba
 const homeDir = os.homedir();
 const vaultEnvVar = "PROJECT_WORKFLOW_OBSIDIAN_VAULT";
 const repoKanbanTemplatePath = "docs/agents/kanban-template.md";
+const pathPortabilityAnchor = "Never commit absolute local paths";
 const expectedVerifyCommand =
   'node "$HOME/.agents/skills/setup-project-workflow/scripts/verify_project_workflow.mjs" --project-root "$PWD"';
 const requiredLanes = ["Backlog", "In Progress", "Completed"];
@@ -33,6 +34,8 @@ const requiredGeneratedDocAnchors = [
     anchors: [
       "Verification command: `verify_project_workflow.mjs`",
       "## Workflow Verification",
+      "## Path Portability",
+      pathPortabilityAnchor,
       "docs/agents/kanban-template.md",
     ],
   },
@@ -41,6 +44,8 @@ const requiredGeneratedDocAnchors = [
     anchors: [
       "Setup verification is performed by `verify_project_workflow.mjs`",
       "## Completing Tickets",
+      "## Path Portability",
+      pathPortabilityAnchor,
       "docs/plans/",
     ],
   },
@@ -93,7 +98,10 @@ function parseArgs(argv) {
 }
 
 function expandHome(value) {
+  if (value === "$HOME" || value === "${HOME}") return homeDir;
   if (value === "~") return homeDir;
+  if (value.startsWith("$HOME/")) return path.join(homeDir, value.slice("$HOME/".length));
+  if (value.startsWith("${HOME}/")) return path.join(homeDir, value.slice("${HOME}/".length));
   if (value.startsWith("~/")) return path.join(homeDir, value.slice(2));
   return value;
 }
@@ -201,6 +209,13 @@ function gitignoreIgnoresEnv(markdown) {
   return markdown.split(/\r?\n/).some((line) => {
     const trimmed = line.trim();
     return trimmed === ".env" || trimmed === ".env*";
+  });
+}
+
+function gitignoreIgnoresSast(markdown) {
+  return markdown.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return trimmed === "sast/" || trimmed === "/sast/";
   });
 }
 
@@ -387,6 +402,13 @@ function verifyProject(options) {
     errors,
     checks,
   );
+  expect(
+    gitignore !== null && gitignoreIgnoresSast(gitignore),
+    ".gitignore ignores sast/",
+    ".gitignore does not ignore sast/",
+    errors,
+    checks,
+  );
 
   const envPath = path.join(projectRoot, ".env");
   const env = readFileIfExists(envPath);
@@ -494,6 +516,13 @@ function verifyProject(options) {
     agents !== null && agents.includes("verify_project_workflow.mjs"),
     "AGENTS.md documents project workflow verification",
     "AGENTS.md does not document verify_project_workflow.mjs",
+    errors,
+    checks,
+  );
+  expect(
+    agents !== null && agents.includes(pathPortabilityAnchor),
+    "AGENTS.md documents path portability rules",
+    "AGENTS.md does not document path portability rules",
     errors,
     checks,
   );
