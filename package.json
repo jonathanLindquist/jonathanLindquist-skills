@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.23.0",
   "scripts": {
     "test": "node --test",
-    "lint": "node --check scripts/install.mjs && node --check skills/setup-project-workflow/scripts/setup_project_workflow.mjs && node --check skills/setup-project-workflow/scripts/new_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/update_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/verify_project_workflow.mjs && node --check test/implement-review.test.mjs && node --check test/install.test.mjs && node --check test/security-scan.test.mjs && node --check test/setup-project-workflow.test.mjs && node --check test/skill-frontmatter.test.mjs",
+    "lint": "node --check scripts/install.mjs && node --check skills/setup-project-workflow/scripts/setup_project_workflow.mjs && node --check skills/setup-project-workflow/scripts/new_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/update_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/verify_project_workflow.mjs && node --check test/implement-jl-and-review-jl.test.mjs && node --check test/install.test.mjs && node --check test/security-scan.test.mjs && node --check test/setup-project-workflow.test.mjs && node --check test/skill-frontmatter.test.mjs",
     "update-skill": "node scripts/install.mjs --update --skill setup-project-workflow"
   },
   "dependencies": {

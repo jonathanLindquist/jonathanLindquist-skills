@@ -11,7 +11,8 @@ projects and temporary Obsidian vaults, then remove the scratch files afterward.
 
 | Skill | Use it when | What it does |
 | --- | --- | --- |
-| `implement-review` | You want an agent to implement a ticket, feature, bug fix, or refactor with normal engineering discipline. | Reads the source request, identifies the test seam, makes scoped changes, runs checks, and performs a proportional review before closeout. |
+| `implement-jl` | You want an agent to implement a ticket, feature, bug fix, or refactor with JL's engineering discipline. | Reads the source request, identifies the test seam, makes scoped changes, updates tests where appropriate, runs checks, and reports verification. |
+| `review-jl` | You want a JL code review, implementation review, PR review, branch audit, or post-implementation review. | Launches the Thermos security/correctness and code-quality rubrics in subagents, collects their findings, verifies high-signal issues, and returns a concise findings-first review. |
 | `security-scan` | You explicitly ask for a SAST-style security scan or vulnerability review. | Orchestrates 13 vendored vulnerability-detection checks, writes scan artifacts under `sast/`, and consolidates confirmed and likely findings. |
 | `setup-project-workflow` | You want to bootstrap or refresh repo-local agent workflow docs and an Obsidian Kanban issue tracker. | Creates `AGENTS.md`, generated docs under `docs/agents/`, stable plans under `docs/plans/`, ticket utilities, verification checks, and the mirrored Obsidian board. |
 
@@ -106,7 +107,8 @@ node scripts/install.mjs \
 
 ```text
 skills/
-  implement-review/
+  implement-jl/
+  review-jl/
   security-scan/
     subskills/
   setup-project-workflow/

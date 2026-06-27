@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement JL"
+  short_description: "Make scoped file changes with verification"
+  default_prompt: "Use $implement-jl to implement the requested change with tests and verification."

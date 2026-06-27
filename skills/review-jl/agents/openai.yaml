@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review JL"
+  short_description: "Run Thermos subagent review"
+  default_prompt: "Use $review-jl to review the requested branch, diff, PR, or worktree with Thermos subagents and synthesize verified findings."

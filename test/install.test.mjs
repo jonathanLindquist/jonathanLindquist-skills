@@ -119,11 +119,15 @@ test("installing all skills exposes only installable folders under skills/", asy
   const installedSkillsRoot = path.join(homeDir, ".agents", "skills");
   const installedEntries = await fs.readdir(installedSkillsRoot);
   for (const expectedSkill of [
-    "implement-review",
+    "implement-jl",
+    "review-jl",
     "security-scan",
     "setup-project-workflow",
   ]) {
     assert.ok(installedEntries.includes(expectedSkill), `${expectedSkill} should be installed`);
+  }
+  for (const retiredSkill of ["implement-review", "implement", "review"]) {
+    assert.ok(!installedEntries.includes(retiredSkill), `${retiredSkill} should not install`);
   }
   assert.ok(
     !installedEntries.some((entry) => entry.startsWith("sast-")),
