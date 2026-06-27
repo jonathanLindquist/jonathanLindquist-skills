@@ -62,6 +62,11 @@ node scripts/install.mjs --target "$HOME/.codex/skills"
 The installer will not replace an existing skill directory unless you pass
 `--replace`.
 
+The installer verifies machine-readable skill dependencies before installing the
+selected skills. `review-jl` declares its Thermos dependency in
+`skills/review-jl/dependencies.json`; installing `review-jl` fails if the
+Thermos plugin capabilities are not available.
+
 ## Update
 
 When a skill is already installed in `$HOME/.agents/skills`, update one skill
@@ -122,6 +127,28 @@ docs/plans/
 Only direct children of `skills/` with a `SKILL.md` are installable. Nested
 resources, such as `skills/security-scan/subskills/*`, stay bundled inside their
 parent skill.
+
+## `review-jl` Requirements
+
+`review-jl` requires the Thermos plugin from `jonathanLindquist-plugins` with
+these capabilities:
+
+- `thermo-nuclear-review`
+- `thermo-nuclear-code-quality-review`
+
+Install the plugin for Codex, then start a fresh Codex thread so the skills are
+visible:
+
+```bash
+codex plugin marketplace add <jonathanLindquist-plugins repo>
+codex plugin add thermos@jonathanlindquist-plugins
+```
+
+Verify the dependency contract from this repo with:
+
+```bash
+node scripts/verify_skill_dependencies.mjs --skill review-jl
+```
 
 ## `setup-project-workflow` Requirements
 

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "dependencies": [
+    {
+      "id": "thermos",
+      "kind": "plugin",
+      "source": "jonathanlindquist-plugins",
+      "capabilities": [
+        "thermo-nuclear-review",
+        "thermo-nuclear-code-quality-review"
+      ],
+      "install": {
+        "codex": [
+          "codex plugin marketplace add <jonathanLindquist-plugins repo>",
+          "codex plugin add thermos@jonathanlindquist-plugins"
+        ]
+      }
+    }
+  ]
+}

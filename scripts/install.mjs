@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { verifySkillDependencies } from "./verify_skill_dependencies.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(repoRoot, "skills");
@@ -247,6 +248,8 @@ function run() {
   if (names.length === 0) {
     throw new Error("No installable skill folders found under skills/.");
   }
+
+  verifySkillDependencies(names, { quiet: true });
 
   for (const name of names) {
     installSkill(name, options);

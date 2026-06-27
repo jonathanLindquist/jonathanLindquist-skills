@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const skillsRoot = path.join(repoRoot, "skills");
 const implementSkill = path.join(skillsRoot, "implement-jl", "SKILL.md");
 const reviewSkill = path.join(skillsRoot, "review-jl", "SKILL.md");
+const reviewDependencies = path.join(skillsRoot, "review-jl", "dependencies.json");
 const securityScanSkill = path.join(skillsRoot, "security-scan", "SKILL.md");
 
 test("implement-jl skill stays implementation-only", async () => {
@@ -24,6 +25,10 @@ test("implement-jl skill stays implementation-only", async () => {
 
 test("review-jl skill delegates Thermos passes to subagents", async () => {
   const content = await fs.readFile(reviewSkill, "utf8");
+  const dependencies = JSON.parse(await fs.readFile(reviewDependencies, "utf8"));
+  const thermosDependency = dependencies.dependencies.find((dependency) => {
+    return dependency.id === "thermos";
+  });
 
   assert.match(content, /^name: review-jl$/m);
   assert.match(content, /\$thermo-nuclear-review/);
@@ -40,6 +45,15 @@ test("review-jl skill delegates Thermos passes to subagents", async () => {
   assert.doesNotMatch(content, /^## Standards$/m);
   assert.doesNotMatch(content, /^## Spec$/m);
   assert.doesNotMatch(content, /security-scan/);
+  assert.equal(dependencies.version, 1);
+  assert.ok(thermosDependency, "review-jl must declare its Thermos dependency");
+  assert.equal(thermosDependency.kind, "plugin");
+  assert.equal(thermosDependency.source, "jonathanlindquist-plugins");
+  assert.deepEqual(thermosDependency.capabilities, [
+    "thermo-nuclear-review",
+    "thermo-nuclear-code-quality-review",
+  ]);
+  assert.doesNotMatch(JSON.stringify(dependencies), /\/Users\//);
 });
 
 test("security-scan is manual trigger only", async () => {

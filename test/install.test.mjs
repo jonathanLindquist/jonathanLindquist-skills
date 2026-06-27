@@ -75,6 +75,22 @@ test("replace handles an existing broken installed symlink", async (t) => {
   assert.equal(await fs.readlink(installedSkill), path.join(skillsRoot, skillName));
 });
 
+test("installing review-jl fails clearly when Thermos plugin capabilities are missing", async (t) => {
+  const workspace = await tempWorkspace(t);
+  const homeDir = path.join(workspace, "home");
+
+  const result = runInstall(["--skill", "review-jl"], homeDir);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /review-jl dependency check failed/);
+  assert.match(result.stderr, /thermos/);
+  assert.match(result.stderr, /thermo-nuclear-review/);
+  assert.match(result.stderr, /thermo-nuclear-code-quality-review/);
+  await assert.rejects(fs.lstat(path.join(homeDir, ".agents", "skills", "review-jl")), {
+    code: "ENOENT",
+  });
+});
+
 test("update refuses to run without an explicit skill", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
@@ -112,6 +128,7 @@ test("sync can target a specific agent-sync provider flag", async (t) => {
 test("installing all skills exposes only installable folders under skills/", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
+  await fakeThermosPlugin(homeDir);
   const result = runInstall([], homeDir);
 
   assert.equal(result.status, 0, result.stderr);
@@ -156,6 +173,10 @@ test("installing all skills fails if the skills source directory is missing", as
   const missingRoot = path.join(workspace, "missing-repo");
   await fs.mkdir(path.join(missingRoot, "scripts"), { recursive: true });
   await fs.cp(installScript, path.join(missingRoot, "scripts", "install.mjs"));
+  await fs.cp(
+    path.join(repoRoot, "scripts", "verify_skill_dependencies.mjs"),
+    path.join(missingRoot, "scripts", "verify_skill_dependencies.mjs"),
+  );
 
   const result = spawnSync(process.execPath, [path.join(missingRoot, "scripts", "install.mjs")], {
     cwd: missingRoot,
@@ -176,6 +197,7 @@ function runInstall(args, homeDir) {
     encoding: "utf8",
     env: {
       ...process.env,
+      CODEX_HOME: path.join(homeDir, ".codex"),
       HOME: homeDir,
     },
   });
@@ -219,4 +241,21 @@ fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(process.argv.slice(
       return content.trim().split("\\n").filter(Boolean).map((line) => JSON.parse(line));
     },
   };
+}
+
+async function fakeThermosPlugin(homeDir) {
+  const pluginRoot = path.join(
+    homeDir,
+    ".codex",
+    "plugins",
+    "cache",
+    "jonathanlindquist-plugins",
+    "thermos",
+    "1.0.0",
+  );
+  for (const skillName of ["thermo-nuclear-review", "thermo-nuclear-code-quality-review"]) {
+    const skillRoot = path.join(pluginRoot, "skills", skillName);
+    await fs.mkdir(skillRoot, { recursive: true });
+    await fs.writeFile(path.join(skillRoot, "SKILL.md"), `---\nname: ${skillName}\n---\n`);
+  }
 }

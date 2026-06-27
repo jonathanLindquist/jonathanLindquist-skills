@@ -105,6 +105,8 @@ or batch files for this check after the final result file is written.
 | `sast-businesslogic` | Business logic flaws | `sast/businesslogic-results.md` |
 | `sast-graphql` | GraphQL injection and authorization issues | `sast/graphql-results.md` |
 
+Skip any check/sub-skill that has `bypass: true` in the front-matter
+
 For final consolidation, include only `[VULNERABLE]` and `[LIKELY VULNERABLE]`
 items in the main body of `sast/final-report.md`. Count `[NEEDS MANUAL REVIEW]`
 items separately and list them after confirmed and likely findings. Preserve
