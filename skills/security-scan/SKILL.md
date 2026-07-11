@@ -5,6 +5,7 @@ description: >-
   checks as parallel subagents and writing results under sast/. Use only when
   the user explicitly asks to run a security scan, vulnerability scan, or SAST
   review.
+disable-model-invocation: true
 ---
 
 Run a static security assessment for the current repo. This skill vendors the

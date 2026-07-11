@@ -32,12 +32,13 @@ pnpm install
 node scripts/install.mjs
 ```
 
-By default, the installer creates per-skill symlinks from `skills/<name>` into
-`$HOME/.agents/skills/<name>`. Use `--mode copy` if you want standalone copies:
+No separate or global `agent-sync` installation is required. `pnpm install`
+installs the pinned version used by both provider sync and provider-link
+cleanup.
 
-```bash
-node scripts/install.mjs --mode copy
-```
+The installer creates per-skill symlinks from `skills/<name>` into
+`$HOME/.agents/skills/<name>`. Re-running an install whose destination already
+links to the same repo skill is a successful no-op.
 
 Install one skill:
 
@@ -52,6 +53,13 @@ Install one skill and immediately sync provider-specific skill folders through
 node scripts/install.mjs --skill setup-project-workflow --sync-providers
 ```
 
+Provider sync is allowed only when the install target is a skills `sourceDir`
+in the selected `agent-sync` config. The pinned config is the default. If a
+custom executable uses another config, also pass `--agent-sync-config <path>`
+so the installer can validate the source and record the destinations it
+actually observes. This option describes the executable's config; it does not
+change how that executable selects its own config.
+
 If your agent runtime reads another skills directory, install into that target
 explicitly:
 
@@ -61,6 +69,13 @@ node scripts/install.mjs --target "$HOME/.codex/skills"
 
 The installer will not replace an existing skill directory unless you pass
 `--replace`.
+
+Successful installs are recorded in a hidden receipt in the target skills
+directory. It records the repo source and any ownership-verified provider
+destinations observed after `--sync-providers`. That history lets uninstall
+clean up an old provider destination even if the current `agent-sync` config
+has since changed. The receipt never authorizes removing a real directory;
+new installations and uninstall ownership are symlink-only.
 
 The installer verifies machine-readable skill dependencies before installing the
 selected skills. `review-jl` declares its Thermos dependency in
@@ -77,17 +92,15 @@ node scripts/install.mjs --update --skill setup-project-workflow
 ```
 
 `--update` is shorthand for `--replace --sync-providers` and requires one
-`--skill`. It replaces `$HOME/.agents/skills/setup-project-workflow` using the
-selected install mode, then runs:
+`--skill`. It ensures `$HOME/.agents/skills/setup-project-workflow` links to the
+repo skill, then runs:
 
 ```bash
 agent-sync --all-providers --skill setup-project-workflow
 ```
 
-By default, update mode installs a symlink to `skills/<name>` in this repo. Add
-`--mode copy` when you want the installed skill to be a standalone copy. Either
-way, `agent-sync` then refreshes provider-specific skill folders, such as
-Claude Code, for only the updated skill.
+`agent-sync` then refreshes provider-specific skill folders, such as Claude
+Code, for only the updated skill.
 
 If `agent-sync` is not on `PATH`, pass its executable explicitly:
 
@@ -108,6 +121,66 @@ node scripts/install.mjs \
   --agent-sync-provider --claude-code
 ```
 
+## Uninstall
+
+Uninstall unlinks per-skill entries without touching this repository's source
+directories. A same-named real directory or a symlink to another source is
+never treated as an owned installation.
+
+Uninstall one skill, several skills, or every skill owned by this repository:
+
+```bash
+node scripts/uninstall.mjs --skill setup-project-workflow
+node scripts/uninstall.mjs --skill implement-jl --skill review-jl
+node scripts/uninstall.mjs --all
+```
+
+Pass the same custom target used at install time when applicable:
+
+```bash
+node scripts/uninstall.mjs \
+  --skill setup-project-workflow \
+  --target "$HOME/.codex/skills"
+```
+
+`--all` is explicit because uninstalling is destructive. It selects receipted
+installs and provably repo-owned primary or provider symlinks; it never removes
+every entry in the target directory. A missing explicit skill is an idempotent
+no-op. A foreign same-named primary entry is rejected before any selected skill
+is changed.
+
+Preview the complete plan without changing files:
+
+```bash
+node scripts/uninstall.mjs --all --dry-run
+```
+
+If installation used `--sync-providers`, remove the verified provider symlinks
+at the same time:
+
+```bash
+node scripts/uninstall.mjs \
+  --skill setup-project-workflow \
+  --remove-provider-links
+```
+
+Provider links are unlinked directly, before the primary installation. The
+uninstaller uses `agent-sync`'s own config loader, selects every skills artifact
+whose physical `sourceDir` matches the uninstall target, and deduplicates its
+provider destinations by physical path. It unions those current destinations
+with any destinations recorded after earlier successful syncs. The pinned
+config currently maps `$HOME/.agents/skills` to `$HOME/.claude/skills`.
+
+Each provider entry must be a symlink whose target exactly matches the repo
+skill source, the primary install, or a recorded/configured source path. Missing
+entries are no-ops. Foreign symlinks and real directories are preserved and
+reported, so they do not block cleanup of owned links. Config parse failures
+remain fatal because otherwise the command could falsely claim that provider
+cleanup was complete. Use `--agent-sync-config <path>` for a legacy install that
+predates provider receipts or used a different config. The uninstaller never
+runs `agent-sync`; doing so after primary removal could import a provider entry
+back into the source directory.
+
 ## Repository Layout
 
 ```text
@@ -119,6 +192,9 @@ skills/
   setup-project-workflow/
 scripts/
   install.mjs
+  install_receipt.mjs
+  provider_config.mjs
+  uninstall.mjs
 test/
 docs/agents/
 docs/plans/
@@ -283,6 +359,7 @@ Useful focused checks:
 
 ```bash
 node --test test/install.test.mjs
+node --test test/uninstall.test.mjs
 node --test test/security-scan.test.mjs
 node --test test/setup-project-workflow.test.mjs
 ```
