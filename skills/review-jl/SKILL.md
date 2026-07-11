@@ -7,6 +7,7 @@ description: >-
   findings-first review. Use when the user asks to use review-jl, or asks for a
   JL code review, implementation review, PR review, branch audit, or
   post-implementation review.
+disable-model-invocation: true
 ---
 
 # Review JL
