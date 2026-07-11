@@ -27,13 +27,13 @@ test("uninstalling one owned symlink removes only the installation and preserves
   assert.equal(await pathExists(sourceSkill), true);
 });
 
-test("repeated skill selectors uninstall a deduplicated explicit set", async (t) => {
+test("comma-separated and repeated skill selectors uninstall a deduplicated set", async (t) => {
   const context = await tempContext(t);
   const firstSkill = await createOwnedSymlink(context.target, implementSkill);
   const secondSkill = await createOwnedSymlink(context.target, setupSkill);
 
   const result = runUninstall(
-    ["--skill", implementSkill, "--skill", implementSkill, "--skill", setupSkill],
+    ["--skill", `${implementSkill}, ${setupSkill}`, "--skill", implementSkill],
     context,
   );
 
@@ -41,6 +41,22 @@ test("repeated skill selectors uninstall a deduplicated explicit set", async (t)
   assert.equal(await pathExists(firstSkill), false);
   assert.equal(await pathExists(secondSkill), false);
   assert.equal(result.stdout.match(/implement-jl: unlink/g)?.length, 1);
+});
+
+test("empty names in a comma-separated skill list fail before removal", async (t) => {
+  const context = await tempContext(t);
+  const firstSkill = await createOwnedSymlink(context.target, implementSkill);
+  const secondSkill = await createOwnedSymlink(context.target, setupSkill);
+
+  const result = runUninstall(
+    ["--skill", `${implementSkill},,${setupSkill}`],
+    context,
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /empty skill name/);
+  assert.equal(await pathExists(firstSkill), true);
+  assert.equal(await pathExists(secondSkill), true);
 });
 
 test("--all removes only owned symlinks and leaves foreign entries unchanged", async (t) => {

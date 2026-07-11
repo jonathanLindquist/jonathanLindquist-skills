@@ -14,11 +14,11 @@ const skillsRoot = path.join(repoRoot, "skills");
 const defaultTarget = path.join(os.homedir(), ".agents", "skills");
 const skillNamePattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const usage = `Usage:
-  uninstall.mjs --skill <name> [--skill <name> ...] [options]
+  uninstall.mjs --skill <name[,name...]> [--skill <name[,name...]> ...] [options]
   uninstall.mjs --all [options]
 
 Options:
-  --skill <name>           Skill to uninstall. Repeatable.
+  --skill <name[,name...]> Skill names to uninstall. Comma-separated and repeatable.
   --all                    Uninstall all skills owned by this repository.
   --target <path>          Skills directory. Defaults to $HOME/.agents/skills.
   --remove-provider-links  Also unlink ownership-verified provider links.
@@ -43,9 +43,8 @@ function parseArgs(argv) {
     const arg = argv[index];
 
     if (arg === "--skill") {
-      const name = requireValue(argv, ++index, arg);
-      validateSkillName(name);
-      options.skills.push(name);
+      const value = requireValue(argv, ++index, arg);
+      options.skills.push(...parseSkillNames(value));
     } else if (arg === "--all") {
       options.all = true;
     } else if (arg === "--target") {
@@ -109,6 +108,15 @@ function validateSkillName(name) {
       `Invalid skill name ${name}. Use lowercase letters, digits, and hyphens only.`,
     );
   }
+}
+
+function parseSkillNames(value) {
+  const names = value.split(",").map((name) => name.trim());
+  if (names.some((name) => name === "")) {
+    throw new Error(`Invalid --skill value ${value}: empty skill name.`);
+  }
+  for (const name of names) validateSkillName(name);
+  return names;
 }
 
 function validateTarget(target, label) {

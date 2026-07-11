@@ -131,9 +131,11 @@ Uninstall one skill, several skills, or every skill owned by this repository:
 
 ```bash
 node scripts/uninstall.mjs --skill setup-project-workflow
-node scripts/uninstall.mjs --skill implement-jl --skill review-jl
+node scripts/uninstall.mjs --skill implement-jl,review-jl
 node scripts/uninstall.mjs --all
 ```
+
+`--skill` accepts one name or a comma-separated list and may be repeated.
 
 Pass the same custom target used at install time when applicable:
 
