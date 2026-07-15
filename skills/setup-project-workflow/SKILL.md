@@ -10,6 +10,8 @@ description: >-
   project/repo, set up project workflow, apply this project workflow pattern,
   create the Obsidian issue tracker for a repo, or make a new repo ready for
   the engineering skills.
+metadata:
+  deprecated: "false"
 disable-model-invocation: true
 ---
 

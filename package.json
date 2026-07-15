@@ -5,11 +5,12 @@
   "packageManager": "pnpm@10.23.0",
   "scripts": {
     "test": "node --test",
-    "lint": "node --check scripts/install.mjs && node --check scripts/install_receipt.mjs && node --check scripts/provider_config.mjs && node --check scripts/uninstall.mjs && node --check scripts/verify_skill_dependencies.mjs && node --check skills/setup-project-workflow/scripts/setup_project_workflow.mjs && node --check skills/setup-project-workflow/scripts/new_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/update_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/verify_project_workflow.mjs && node --check test/implement-jl-and-review-jl.test.mjs && node --check test/install.test.mjs && node --check test/uninstall.test.mjs && node --check test/security-scan.test.mjs && node --check test/setup-project-workflow.test.mjs && node --check test/skill-dependencies.test.mjs && node --check test/skill-frontmatter.test.mjs && node --check test/to-spec-jl.test.mjs",
+    "lint": "node --check scripts/install.mjs && node --check scripts/install_receipt.mjs && node --check scripts/provider_config.mjs && node --check scripts/skill_metadata.mjs && node --check scripts/uninstall.mjs && node --check scripts/verify_skill_dependencies.mjs && node --check skills/setup-project-workflow/scripts/setup_project_workflow.mjs && node --check skills/setup-project-workflow/scripts/new_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/update_project_ticket.mjs && node --check skills/setup-project-workflow/scripts/verify_project_workflow.mjs && node --check test/implement-jl-and-review-jl.test.mjs && node --check test/install.test.mjs && node --check test/uninstall.test.mjs && node --check test/security-scan.test.mjs && node --check test/setup-project-workflow.test.mjs && node --check test/skill-dependencies.test.mjs && node --check test/skill-frontmatter.test.mjs && node --check test/to-spec-jl.test.mjs",
     "update-skill": "node scripts/install.mjs --update --skill setup-project-workflow"
   },
   "dependencies": {
-    "agent-sync": "https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.3.0"
+    "agent-sync": "https://codeload.github.com/jonathanLindquist/agent-sync/tar.gz/refs/tags/v0.3.0",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=20"

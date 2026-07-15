@@ -163,20 +163,41 @@ test("replace handles an existing broken installed symlink", async (t) => {
   assert.equal(await fs.readlink(installedSkill), path.join(skillsRoot, skillName));
 });
 
-test("installing review-jl fails clearly when Thermos plugin capabilities are missing", async (t) => {
+test("explicit deprecated skills skip install and provider sync", async (t) => {
   const workspace = await tempWorkspace(t);
-  const homeDir = path.join(workspace, "home");
 
-  const result = runInstall(["--skill", "review-jl"], homeDir);
+  for (const deprecatedSkill of ["implement-jl", "review-jl"]) {
+    const skillWorkspace = path.join(workspace, deprecatedSkill);
+    const homeDir = path.join(skillWorkspace, "home");
+    await fs.mkdir(skillWorkspace, { recursive: true });
+    const agentSync = await fakeAgentSync(skillWorkspace);
 
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /review-jl dependency check failed/);
-  assert.match(result.stderr, /thermos/);
-  assert.match(result.stderr, /thermo-nuclear-review/);
-  assert.match(result.stderr, /thermo-nuclear-code-quality-review/);
-  await assert.rejects(fs.lstat(path.join(homeDir, ".agents", "skills", "review-jl")), {
-    code: "ENOENT",
-  });
+    const installArgs =
+      deprecatedSkill === "review-jl"
+        ? ["--update", "--skill", deprecatedSkill, "--agent-sync-bin", agentSync.binPath]
+        : [
+            "--skill",
+            deprecatedSkill,
+            "--sync-providers",
+            "--agent-sync-bin",
+            agentSync.binPath,
+          ];
+    const result = runInstall(installArgs, homeDir);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, new RegExp(`${deprecatedSkill}: skipped \\(deprecated\\)`));
+    assert.equal(
+      await pathExists(path.join(homeDir, ".agents", "skills", deprecatedSkill)),
+      false,
+    );
+    assert.equal(
+      await pathExists(
+        path.join(homeDir, ".agents", "skills", ".jonathan-lindquist-skills-install.json"),
+      ),
+      false,
+    );
+    await assert.rejects(fs.readFile(agentSync.logPath, "utf8"), { code: "ENOENT" });
+  }
 });
 
 test("update refuses to run without an explicit skill", async (t) => {
@@ -241,23 +262,28 @@ test("provider sync rejects an install target outside the pinned agent-sync sour
 test("installing all skills exposes only installable folders under skills/", async (t) => {
   const workspace = await tempWorkspace(t);
   const homeDir = path.join(workspace, "home");
-  await fakeThermosPlugin(homeDir);
   const result = runInstall([], homeDir);
 
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /implement-jl: skipped \(deprecated\)/);
+  assert.match(result.stdout, /review-jl: skipped \(deprecated\)/);
 
   const installedSkillsRoot = path.join(homeDir, ".agents", "skills");
   const installedEntries = await fs.readdir(installedSkillsRoot);
   for (const expectedSkill of [
-    "implement-jl",
-    "review-jl",
     "security-scan",
     "setup-project-workflow",
     "to-spec-jl",
   ]) {
     assert.ok(installedEntries.includes(expectedSkill), `${expectedSkill} should be installed`);
   }
-  for (const retiredSkill of ["implement-review", "implement", "review"]) {
+  for (const retiredSkill of [
+    "implement-jl",
+    "review-jl",
+    "implement-review",
+    "implement",
+    "review",
+  ]) {
     assert.ok(!installedEntries.includes(retiredSkill), `${retiredSkill} should not install`);
   }
   assert.ok(
@@ -296,9 +322,14 @@ test("installing all skills fails if the skills source directory is missing", as
     path.join(missingRoot, "scripts", "provider_config.mjs"),
   );
   await fs.cp(
+    path.join(repoRoot, "scripts", "skill_metadata.mjs"),
+    path.join(missingRoot, "scripts", "skill_metadata.mjs"),
+  );
+  await fs.cp(
     path.join(repoRoot, "scripts", "verify_skill_dependencies.mjs"),
     path.join(missingRoot, "scripts", "verify_skill_dependencies.mjs"),
   );
+  await fs.symlink(path.join(repoRoot, "node_modules"), path.join(missingRoot, "node_modules"), "dir");
 
   const result = spawnSync(process.execPath, [path.join(missingRoot, "scripts", "install.mjs")], {
     cwd: missingRoot,
@@ -329,10 +360,12 @@ test("installer rejects a target symlink that physically overlaps its source rep
     "install.mjs",
     "install_receipt.mjs",
     "provider_config.mjs",
+    "skill_metadata.mjs",
     "verify_skill_dependencies.mjs",
   ]) {
     await fs.cp(path.join(repoRoot, "scripts", scriptName), path.join(fakeScripts, scriptName));
   }
+  await fs.symlink(path.join(repoRoot, "node_modules"), path.join(fakeRepo, "node_modules"), "dir");
   await fs.symlink(fakeSkills, targetAlias, "dir");
 
   const result = spawnSync(
@@ -430,21 +463,4 @@ ${linkProviderBody}
       return content.trim().split("\\n").filter(Boolean).map((line) => JSON.parse(line));
     },
   };
-}
-
-async function fakeThermosPlugin(homeDir) {
-  const pluginRoot = path.join(
-    homeDir,
-    ".codex",
-    "plugins",
-    "cache",
-    "jonathanlindquist-plugins",
-    "thermos",
-    "1.0.0",
-  );
-  for (const skillName of ["thermo-nuclear-review", "thermo-nuclear-code-quality-review"]) {
-    const skillRoot = path.join(pluginRoot, "skills", skillName);
-    await fs.mkdir(skillRoot, { recursive: true });
-    await fs.writeFile(path.join(skillRoot, "SKILL.md"), `---\nname: ${skillName}\n---\n`);
-  }
 }

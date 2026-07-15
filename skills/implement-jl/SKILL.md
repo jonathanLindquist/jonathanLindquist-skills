@@ -7,6 +7,8 @@ description: >-
   to modify files with JL's engineering discipline. Identifies test seams, adds
   or updates tests for behavior changes, runs focused checks, and reports
   verification without performing a review pass.
+metadata:
+  deprecated: "true"
 disable-model-invocation: true
 ---
 

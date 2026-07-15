@@ -3,8 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.join(repoRoot, "skills");
 
 test("skill front matter avoids YAML-unsafe plain scalars", async () => {
   const skillFiles = await findSkillFiles(repoRoot);
@@ -29,6 +31,30 @@ test("skill front matter avoids YAML-unsafe plain scalars", async () => {
         `${relative(skillFile)}:${index + 2} ${key} must quote or fold colon-space values`,
       );
     }
+  }
+});
+
+test("top-level skills declare their install deprecation status", async () => {
+  const expectedStatus = {
+    "implement-jl": "true",
+    "review-jl": "true",
+    "security-scan": "false",
+    "setup-project-workflow": "false",
+    "to-spec-jl": "false",
+  };
+
+  for (const [skillName, deprecated] of Object.entries(expectedStatus)) {
+    const skillFile = path.join(skillsRoot, skillName, "SKILL.md");
+    const content = await fs.readFile(skillFile, "utf8");
+    const frontMatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    assert.ok(frontMatter, `${relative(skillFile)} must start with YAML front matter`);
+
+    const skill = parse(frontMatter[1]);
+    assert.equal(
+      skill.metadata?.deprecated,
+      deprecated,
+      `${relative(skillFile)} must declare metadata.deprecated as ${JSON.stringify(deprecated)}`,
+    );
   }
 });
 

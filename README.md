@@ -9,13 +9,13 @@ projects and temporary Obsidian vaults, then remove the scratch files afterward.
 
 ## Skill Catalog
 
-| Skill | Use it when | What it does |
-| --- | --- | --- |
-| `implement-jl` | You want an agent to implement a ticket, feature, bug fix, or refactor with JL's engineering discipline. | Reads the source request, identifies the test seam, makes scoped changes, updates tests where appropriate, runs checks, and reports verification. |
-| `review-jl` | You want a JL code review, implementation review, PR review, branch audit, or post-implementation review. | Launches the Thermos security/correctness and code-quality rubrics in subagents, collects their findings, verifies high-signal issues, and returns a concise findings-first review. |
-| `security-scan` | You explicitly ask for a SAST-style security scan or vulnerability review. | Orchestrates 13 vendored vulnerability-detection checks, writes scan artifacts under `sast/`, and consolidates confirmed and likely findings. |
-| `setup-project-workflow` | You want to bootstrap or refresh repo-local agent workflow docs and an Obsidian Kanban issue tracker. | Creates `AGENTS.md`, generated docs under `docs/agents/`, stable plans under `docs/plans/`, ticket utilities, verification checks, and the mirrored Obsidian board. |
-| `to-spec-jl` | You explicitly want to turn a conversation into a durable epic spec or PRD. | Writes a fully formed implementation spec under `docs/spec/` or an established `docs/prd/` convention without creating an issue-tracker ticket. |
+| Skill | Status | Use it when | What it does |
+| --- | --- | --- | --- |
+| `implement-jl` | Deprecated | You want an agent to implement a ticket, feature, bug fix, or refactor with JL's engineering discipline. | Reads the source request, identifies the test seam, makes scoped changes, updates tests where appropriate, runs checks, and reports verification. |
+| `review-jl` | Deprecated | You want a JL code review, implementation review, PR review, branch audit, or post-implementation review. | Launches the Thermos security/correctness and code-quality rubrics in subagents, collects their findings, verifies high-signal issues, and returns a concise findings-first review. |
+| `security-scan` | Active | You explicitly ask for a SAST-style security scan or vulnerability review. | Orchestrates 13 vendored vulnerability-detection checks, writes scan artifacts under `sast/`, and consolidates confirmed and likely findings. |
+| `setup-project-workflow` | Active | You want to bootstrap or refresh repo-local agent workflow docs and an Obsidian Kanban issue tracker. | Creates `AGENTS.md`, generated docs under `docs/agents/`, stable plans under `docs/plans/`, ticket utilities, verification checks, and the mirrored Obsidian board. |
+| `to-spec-jl` | Active | You explicitly want to turn a conversation into a durable epic spec or PRD. | Writes a fully formed implementation spec under `docs/spec/` or an established docs/prd convention without creating an issue-tracker ticket. |
 
 `to-spec-jl` keeps specification and ticket creation separate. After reviewing
 the spec, invoke `$to-tickets <spec-path>` independently to break it into small
@@ -44,6 +44,11 @@ cleanup.
 The installer creates per-skill symlinks from `skills/<name>` into
 `$HOME/.agents/skills/<name>`. Re-running an install whose destination already
 links to the same repo skill is a successful no-op.
+
+Skills with `metadata.deprecated: "true"` in `SKILL.md` are skipped before
+dependency checks, receipt changes, symlink creation, or provider sync. An
+explicit `--skill` or `--update` request for one of those skills also succeeds
+as a logged skip. Previously installed copies are not removed automatically.
 
 Install one skill:
 
@@ -82,10 +87,10 @@ clean up an old provider destination even if the current `agent-sync` config
 has since changed. The receipt never authorizes removing a real directory;
 new installations and uninstall ownership are symlink-only.
 
-The installer verifies machine-readable skill dependencies before installing the
-selected skills. `review-jl` declares its Thermos dependency in
-`skills/review-jl/dependencies.json`; installing `review-jl` fails if the
-Thermos plugin capabilities are not available.
+The installer verifies machine-readable skill dependencies before installing
+the selected active skills. `review-jl` retains its Thermos dependency contract
+in `skills/review-jl/dependencies.json`, but is currently deprecated and is
+therefore skipped before that dependency check runs.
 
 ## Update
 
@@ -202,15 +207,17 @@ scripts/
   install.mjs
   install_receipt.mjs
   provider_config.mjs
+  skill_metadata.mjs
   uninstall.mjs
 test/
 docs/agents/
 docs/plans/
 ```
 
-Only direct children of `skills/` with a `SKILL.md` are installable. Nested
-resources, such as `skills/security-scan/subskills/*`, stay bundled inside their
-parent skill.
+Only active direct children of `skills/` with a `SKILL.md` are installed.
+Top-level skills declare their status with `metadata.deprecated` in their
+frontmatter. Nested resources, such as `skills/security-scan/subskills/*`, stay
+bundled inside their parent skill.
 
 ## `review-jl` Requirements
 

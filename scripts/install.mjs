@@ -9,6 +9,7 @@ import {
   DEFAULT_AGENT_SYNC_CONFIG,
   physicalPath,
 } from "./provider_config.mjs";
+import { isSkillDeprecated } from "./skill_metadata.mjs";
 import { verifySkillDependencies } from "./verify_skill_dependencies.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -212,6 +213,16 @@ function installableSkillNames() {
     .sort();
 }
 
+function activeSkillNames(names) {
+  return names.filter((name) => {
+    const skillFile = path.join(skillsRoot, name, "SKILL.md");
+    if (!fs.existsSync(skillFile) || !isSkillDeprecated(skillFile)) return true;
+
+    console.log(`${name}: skipped (deprecated)`);
+    return false;
+  });
+}
+
 function installSkill(name, options) {
   validateSkillName(name);
   const source = path.join(skillsRoot, name);
@@ -339,11 +350,14 @@ function recordProviderDestinations(skillNames, options, receipt, layout) {
 
 async function run() {
   const options = parseArgs(process.argv.slice(2));
-  const names = options.skill ? [options.skill] : installableSkillNames();
+  const candidates = options.skill ? [options.skill] : installableSkillNames();
 
-  if (names.length === 0) {
+  if (candidates.length === 0) {
     throw new Error("No installable skill folders found under skills/.");
   }
+
+  const names = activeSkillNames(candidates);
+  if (names.length === 0) return;
 
   const providerLayout = options.syncProviders
     ? await configuredSkillProviders({

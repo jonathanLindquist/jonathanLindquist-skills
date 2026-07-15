@@ -5,6 +5,8 @@ description: >-
   checks as parallel subagents and writing results under sast/. Use only when
   the user explicitly asks to run a security scan, vulnerability scan, or SAST
   review.
+metadata:
+  deprecated: "false"
 disable-model-invocation: true
 ---
 

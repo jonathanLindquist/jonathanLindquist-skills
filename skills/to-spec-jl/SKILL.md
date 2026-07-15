@@ -7,6 +7,8 @@ description: >-
   implementation spec or PRD under docs/spec or an established docs/prd
   directory. Does not create or modify issue-tracker tickets; use $to-tickets
   separately for ticket breakdown and publication.
+metadata:
+  deprecated: "false"
 disable-model-invocation: true
 ---
 
