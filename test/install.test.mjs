@@ -253,6 +253,7 @@ test("installing all skills exposes only installable folders under skills/", asy
     "review-jl",
     "security-scan",
     "setup-project-workflow",
+    "to-spec-jl",
   ]) {
     assert.ok(installedEntries.includes(expectedSkill), `${expectedSkill} should be installed`);
   }

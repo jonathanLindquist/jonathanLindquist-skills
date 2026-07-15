@@ -1,0 +1,6 @@
+interface:
+  display_name: "To Spec JL"
+  short_description: "Write an epic spec without creating a ticket"
+  default_prompt: "Use $to-spec-jl to turn this conversation into a durable epic-level spec in the repository."
+policy:
+  allow_implicit_invocation: false

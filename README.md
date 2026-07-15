@@ -15,6 +15,11 @@ projects and temporary Obsidian vaults, then remove the scratch files afterward.
 | `review-jl` | You want a JL code review, implementation review, PR review, branch audit, or post-implementation review. | Launches the Thermos security/correctness and code-quality rubrics in subagents, collects their findings, verifies high-signal issues, and returns a concise findings-first review. |
 | `security-scan` | You explicitly ask for a SAST-style security scan or vulnerability review. | Orchestrates 13 vendored vulnerability-detection checks, writes scan artifacts under `sast/`, and consolidates confirmed and likely findings. |
 | `setup-project-workflow` | You want to bootstrap or refresh repo-local agent workflow docs and an Obsidian Kanban issue tracker. | Creates `AGENTS.md`, generated docs under `docs/agents/`, stable plans under `docs/plans/`, ticket utilities, verification checks, and the mirrored Obsidian board. |
+| `to-spec-jl` | You explicitly want to turn a conversation into a durable epic spec or PRD. | Writes a fully formed implementation spec under `docs/spec/` or an established `docs/prd/` convention without creating an issue-tracker ticket. |
+
+`to-spec-jl` keeps specification and ticket creation separate. After reviewing
+the spec, invoke `$to-tickets <spec-path>` independently to break it into small
+tracker tickets with blocking relationships.
 
 `security-scan` contains nested SAST detection skills under
 `skills/security-scan/subskills/`. They are resources for the orchestrator and
@@ -192,6 +197,7 @@ skills/
   security-scan/
     subskills/
   setup-project-workflow/
+  to-spec-jl/
 scripts/
   install.mjs
   install_receipt.mjs
